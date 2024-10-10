@@ -3,6 +3,7 @@ import pygame
 import sys
 import math
 import copy
+from collections import defaultdict, deque
 
 pygame.init()
 
@@ -21,12 +22,23 @@ WHITE = (245, 245, 245)
 LIGHTER_GREY = (180, 180, 180)
 LIGHTER_YELLOW = (200, 255, 50)
 LIGHTER_WHITE = (255, 255, 255)
+RED = (235, 0, 0)
+LIGHTER_RED = (255, 20, 20)
+
+P_OFF = (161, 157, 39)
+P_ON = (212, 206, 46)
+N_OFF = (166, 92, 55)
+N_ON = (212, 98, 41)
+
+W_OFF = (120, 120, 120)
+W_ON = (188, 245, 0)
 
 # Sizes
-WIRE_SIZE = 8
+WIRE_SIZE = 16
 CONNECTION_SIZE = 16
 POINT_SIZE = 4
 IO_POINT_SIZE = 32
+HOVER_RADIUS = 30
 
 # Modes
 MODE_NONE = 'none'
@@ -42,9 +54,68 @@ screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
 pygame.display.set_caption("Circuit Simulator")
 clock = pygame.time.Clock()
 
+
+# Function to draw a line with rounded corners
+def draw_round_line(surface, color, start, end, width, radius):
+    """
+    Draws a rounded rectangle (like a thick line with rounded ends) between two points.
+
+    Parameters:
+    - surface (pygame.Surface): The surface to draw on.
+    - color (tuple): The RGB color of the rectangle, e.g., (255, 0, 0) for red.
+    - start (tuple): The starting point (x, y) of the rectangle.
+    - end (tuple): The ending point (x, y) of the rectangle.
+    - width (int): The thickness of the rectangle.
+    - radius (int): The radius of the rounded corners.
+
+    Returns:
+    - None
+    """
+    # Calculate the difference in coordinates
+    dx = end[0] - start[0]
+    dy = end[1] - start[1]
+
+    # Calculate the distance between start and end points
+    distance = math.hypot(dx, dy)
+    if distance == 0:
+        # Avoid drawing if start and end points are the same
+        return
+
+    # Calculate the angle in degrees. Negative dy because Pygame's y-axis is inverted
+    angle = math.degrees(math.atan2(-dy, dx))
+
+    # Create a surface for the rectangle with per-pixel alpha
+    rect_surface = pygame.Surface((distance, width), pygame.SRCALPHA)
+
+
+    radius = min(width//2, int(width*radius))
+
+    # Draw the rounded rectangle on the temporary surface
+    pygame.draw.rect(
+        rect_surface,
+        color,
+        pygame.Rect(0, 0, distance, width),
+        border_radius=radius
+    )
+
+    # Rotate the rectangle surface to align with the angle between start and end
+    rotated_surface = pygame.transform.rotate(rect_surface, angle)
+
+    # Get the rotated surface's rectangle and set its center to the midpoint between start and end
+    rotated_rect = rotated_surface.get_rect()
+
+    # Calculate midpoint
+    mid_x = (start[0] + end[0]) / 2
+    mid_y = (start[1] + end[1]) / 2
+
+    # Calculate the top-left position to blit the rotated surface so that it's centered at the midpoint
+    blit_position = (mid_x - rotated_rect.width / 2, mid_y - rotated_rect.height / 2)
+
+    # Blit the rotated surface onto the target surface at the calculated position
+    surface.blit(rotated_surface, blit_position)
+
+
 # Classes
-
-
 class Grid:
     def __init__(self):
         self.scale = 1.0
@@ -116,21 +187,30 @@ class Grid:
                     if 0 <= screen_x < WIDTH and 0 <= screen_y < HEIGHT:
                         pygame.draw.circle(screen, GREY, (int(screen_x), int(screen_y)), max(1, int(POINT_SIZE * self.scale)))
 
-
 class Wire:
     def __init__(self, start_point, end_point):
         self.start_point = start_point  # (x, y)
         self.end_point = end_point      # (x, y)
-        self.state = False  # False = OFF, True = ON
+        self.state = None  # False = OFF, True = ON
 
     def draw(self, grid, is_hovered=False):
         if self.state:
-            color = LIGHTER_YELLOW if is_hovered else YELLOW
+            color = W_ON
         else:
-            color = LIGHTER_GREY if is_hovered else GREY
+            color = W_OFF
+
+        if is_hovered:
+            color = list(color)
+            for i, v in enumerate(color):
+                color[i] += 5
+                color[i] = min(255, color[i])
+
         start_x, start_y = grid.world_to_screen(*self.start_point)
         end_x, end_y = grid.world_to_screen(*self.end_point)
         pygame.draw.line(screen, color, (start_x, start_y), (end_x, end_y), max(1, int(WIRE_SIZE * grid.scale)))
+
+        pygame.draw.circle(screen, color, (start_x, start_y), int(CONNECTION_SIZE * grid.scale))
+        pygame.draw.circle(screen, color, (end_x, end_y), int(CONNECTION_SIZE * grid.scale))
 
     def is_hovered(self, grid, mouse_pos):
         # Check if mouse is close to the wire
@@ -140,30 +220,36 @@ class Wire:
 
         # Check for horizontal wire
         if start_y == end_y:
-            if min(start_x, end_x) - 5 <= mouse_x <= max(start_x, end_x) + 5 and abs(mouse_y - start_y) <= 5:
+            if min(start_x, end_x) - HOVER_RADIUS <= mouse_x <= max(start_x, end_x) + HOVER_RADIUS and abs(mouse_y - start_y) <= HOVER_RADIUS:
                 return True
         # Check for vertical wire
         elif start_x == end_x:
-            if min(start_y, end_y) - 5 <= mouse_y <= max(start_y, end_y) + 5 and abs(mouse_x - start_x) <= 5:
+            if min(start_y, end_y) - HOVER_RADIUS <= mouse_y <= max(start_y, end_y) + HOVER_RADIUS and abs(mouse_x - start_x) <= HOVER_RADIUS:
                 return True
         return False
-
 
 class Node:
     def __init__(self, position, node_type):
         self.position = position  # (x, y)
         self.node_type = node_type  # 'input' or 'output'
-        self.state = False  # False = 0, True = 1
+        if self.node_type == 'input':
+            self.state = False  # False = 0, True = 1
+        else:
+            self.state = None
 
     def draw(self, grid, is_hovered=False):
         screen_x, screen_y = grid.world_to_screen(*self.position)
 
-        color = YELLOW if self.state else WHITE
+        if self.state:
+            color = YELLOW
+        else:
+            color = WHITE
+
         if is_hovered:
             color = LIGHTER_YELLOW if self.state else LIGHTER_WHITE
 
         pygame.draw.circle(screen, color, (int(screen_x), int(screen_y)), int(IO_POINT_SIZE * grid.scale))
-        font = pygame.font.SysFont(None, 24)
+        font = pygame.font.SysFont(None, int(48 * grid.scale))
         text = font.render('1' if self.state else '0', True, BLACK)
         text_rect = text.get_rect(center=(int(screen_x), int(screen_y)))
         screen.blit(text, text_rect)
@@ -176,64 +262,81 @@ class Node:
         screen_x, screen_y = grid.world_to_screen(*self.position)
         mouse_x, mouse_y = mouse_pos
         distance = math.hypot(screen_x - mouse_x, screen_y - mouse_y)
-        return distance < 10  # Threshold in pixels
-
+        return distance < HOVER_RADIUS  # Threshold in pixels
+        
 
 class Transistor:
     def __init__(self, position, transistor_type='n-type'):
         self.position = position  # Middle point (x, y)
-        self.state = False# if transistor_type == 'n-type' else True # False = OFF, True = ON
+        self.state = False if transistor_type == 'n-type' else True # False = OFF, True = ON
         self.transistor_type = transistor_type  # 'n-type' or 'p-type'
 
     def draw(self, grid, is_hovered=False):
-        if self.transistor_type == 'n-type':
-            base_color = WHITE if self.state else DARK_GREY
-            hover_color = LIGHTER_WHITE if self.state else GREY
-        else:  # p-type transistor
-            base_color = (255, 192, 203) if self.state else (128, 0, 128)  # Pink colors
-            hover_color = (255, 182, 193) if self.state else (147, 112, 219)
+        if self.transistor_type == "n-type":
+            if self.state:
+                color_a = N_ON
+                color_b = P_OFF
+            else:
+                color_a = N_OFF
+                color_b = P_ON
+        else:
+            if self.state:
+                color_a = P_OFF
+                color_b = N_ON
+            else:
+                color_a = P_ON
+                color_b = N_OFF
 
-        color = base_color if not is_hovered else hover_color
+        if is_hovered:
+            color_a = list(color_a)
+            color_b = list(color_b)
+            for i, v in enumerate(color_a):
+                color_a[i] += 5
+                color_b[i] += 5
+                color_a[i] = min(255, color_a[i])
+                color_b[i] = min(255, color_b[i])
+            
+
         middle_x, middle_y = self.position
         left_x = middle_x - GRID_SPACING
         right_x = middle_x + GRID_SPACING
 
         # Draw legs
-        leg_width = int(WIRE_SIZE * grid.scale)
-        leg_height = GRID_SPACING // 3
+        leg_width = int(GRID_SPACING * 0.4 * grid.scale)
+        leg_height = int(GRID_SPACING * 0.51)
+        bridge_width = int(GRID_SPACING * 0.8 * grid.scale)
+        bridge_height = int(GRID_SPACING * 0.51)
         # Left leg
         left_leg_top = (left_x, middle_y - leg_height)
-        left_leg_bottom = (left_x, middle_y)
+        left_leg_bottom = (left_x, middle_y + leg_height)
         left_leg_top_screen = grid.world_to_screen(*left_leg_top)
         left_leg_bottom_screen = grid.world_to_screen(*left_leg_bottom)
-        pygame.draw.line(screen, color, left_leg_top_screen,
-                         left_leg_bottom_screen, int(leg_width*2))
+        draw_round_line(screen, color_a, left_leg_top_screen,
+                         left_leg_bottom_screen, leg_width, 0.15)
         # Right leg
         right_leg_top = (right_x, middle_y - leg_height)
-        right_leg_bottom = (right_x, middle_y)
+        right_leg_bottom = (right_x, middle_y + leg_height)
         right_leg_top_screen = grid.world_to_screen(*right_leg_top)
         right_leg_bottom_screen = grid.world_to_screen(*right_leg_bottom)
-        pygame.draw.line(screen, color, right_leg_top_screen,
-                         right_leg_bottom_screen, int(leg_width*2))
+        draw_round_line(screen, color_a, right_leg_top_screen,
+                         right_leg_bottom_screen, leg_width, 0.15)
         # Bridge
-        bridge_height = middle_y - leg_height - 10  # Slightly raised above legs
-        bridge_left = (left_x - 5, bridge_height)
-        bridge_right = (right_x + 5, bridge_height)
-        bridge_left_screen = grid.world_to_screen(*bridge_left)
-        bridge_right_screen = grid.world_to_screen(*bridge_right)
-        pygame.draw.line(screen, color, bridge_left_screen,
-                         bridge_right_screen, leg_width)
+        bridge_top = (middle_x, middle_y - bridge_height)
+        bridge_bottom = (middle_x, middle_y + bridge_height)
+        bridge_top_screen = grid.world_to_screen(*bridge_top)
+        bridge_bottom_screen = grid.world_to_screen(*bridge_bottom)
+        #pygame.draw.line(screen, color_b, bridge_top_screen, bridge_bottom_screen, bridge_width)
+        draw_round_line(screen, color_b, bridge_top_screen, bridge_bottom_screen, bridge_width, 0.15)
         
         # Terminals
-        pygame.draw.circle(screen, color, (int(left_leg_bottom_screen[0]), int(left_leg_bottom_screen[1])), int(CONNECTION_SIZE * grid.scale))
-        pygame.draw.circle(screen, color, (int(right_leg_bottom_screen[0]), int(right_leg_bottom_screen[1])), int(CONNECTION_SIZE * grid.scale))
+        #pygame.draw.circle(screen, color_a, (int(left_leg_bottom_screen[0]), int(left_leg_bottom_screen[1])), int(CONNECTION_SIZE * grid.scale))
+        #pygame.draw.circle(screen, color_a, (int(right_leg_bottom_screen[0]), int(right_leg_bottom_screen[1])), int(CONNECTION_SIZE * grid.scale))
 
     def is_hovered(self, grid, mouse_pos):
         screen_x, screen_y = grid.world_to_screen(*self.position)
         mouse_x, mouse_y = mouse_pos
         distance = math.hypot(screen_x - mouse_x, screen_y - mouse_y)
-        return distance < 15  # Threshold in pixels
-
+        return distance < HOVER_RADIUS  # Threshold in pixels
 
 class Circuit:
     def __init__(self):
@@ -267,6 +370,10 @@ class Circuit:
         self.is_moving_object = False
         self.moving_object = None
         self.move_offset = None
+
+        # Circuit Logic
+        self.on_points = []
+        self.off_points = []
 
     def handle_event(self, event):
         # Window resize
@@ -436,11 +543,11 @@ class Circuit:
                         end_point = (grid_x, self.wire_start_point[1])
                     else:
                         end_point = (self.wire_start_point[0], grid_y)
-
                     # Create wire
-                    self.wires.append(Wire(self.wire_start_point, end_point))
+                    if not (end_point == self.wire_start_point):
+                        self.wires.append(Wire(self.wire_start_point, end_point))
+                        self.update_circuit_state()
                     self.is_drawing_wire = False
-                    self.update_circuit_state()
 
         # Mouse motion
         elif event.type == pygame.MOUSEMOTION:
@@ -687,114 +794,90 @@ class Circuit:
             self.wires.remove(wire)
             self.update_circuit_state()
 
-    def update_circuit_state(self):
-        # First, reset states
+    def get_state_at_point(self, point):
+        if point in self.on_points:
+            return True
+        else:
+            return False
+
+    def build_connectivity_graph(self):
+        graph = defaultdict(list)
+        
+        # Add wires to the graph
         for wire in self.wires:
-            wire.state = False
+            graph[wire.start_point].append(wire.end_point)
+            graph[wire.end_point].append(wire.start_point)
+        
+        # Add nodes (inputs and outputs) to the graph
         for node in self.nodes:
-            if node.node_type == 'output':
-                node.state = False
+            graph[node.position]  # Ensure the node is in the graph
+        
+        # Add transistors as conditional edges
         for transistor in self.transistors:
-            transistor.state = False
+            gate = transistor.position
+            source = (transistor.position[0] - GRID_SPACING, transistor.position[1])
+            drain = (transistor.position[0] + GRID_SPACING, transistor.position[1])
+            
+            # Determine if the transistor is conducting
+            gate_state = self.get_state_at_point(gate)  # Function to determine the state at a given point
+            conducting = False
+            if transistor.transistor_type == "n-type" and gate_state:
+                conducting = True
+            elif transistor.transistor_type == "p-type" and not gate_state:
+                conducting = True
+            
+            if conducting:
+                # Connect source and drain
+                graph[source].append(drain)
+                graph[drain].append(source)
+        
+        return graph
 
-        # Build the base graph (without transistor connections)
-        def build_base_graph():
-            graph = {}
-            # Initialize the graph nodes
-            all_points = set()
+    def update_circuit_state(self):
+        previous_states = None
+        while True:
+            graph = self.build_connectivity_graph()
+            input_nodes = [node.position for node in self.nodes if node.node_type == 'input' and node.state]
+            self.on_points = self.propagate_signals(graph, input_nodes)
+            
+            current_states = (self.on_points, tuple(transistor.state for transistor in self.transistors))
+            if current_states == previous_states:
+                break
+            previous_states = current_states
+            
+            # Update states
             for wire in self.wires:
-                all_points.add(wire.start_point)
-                all_points.add(wire.end_point)
-            for transistor in self.transistors:
-                left_point = (transistor.position[0] - GRID_SPACING, transistor.position[1])
-                right_point = (transistor.position[0] + GRID_SPACING, transistor.position[1])
-                all_points.add(left_point)
-                all_points.add(right_point)
-                all_points.add(transistor.position)
+                wire.state = wire.start_point in self.on_points or wire.end_point in self.on_points
+            
             for node in self.nodes:
-                all_points.add(node.position)
-
-            for point in all_points:
-                graph[point] = []
-
-            # Add edges from wires
-            for wire in self.wires:
-                graph[wire.start_point].append(wire.end_point)
-                graph[wire.end_point].append(wire.start_point)
-
-            return graph
-
-        graph = build_base_graph()
-
-        # Initialize 'on' points from 'on' input nodes
-        on_points = set()
-        for node in self.nodes:
-            if node.node_type == 'input' and node.state:
-                on_points.add(node.position)
-
-        changed = True
-        while changed:
-            changed = False
-
-            # Update transistor states
-            transistor_states_changed = False
+                node.state = node.position in self.on_points
+            
             for transistor in self.transistors:
-                control_point = transistor.position
-                if transistor.transistor_type == 'n-type':
-                    new_state = control_point in on_points
-                elif transistor.transistor_type == 'p-type':
-                    new_state = control_point in on_points
-                else:
-                    new_state = False  # Default to OFF
-                if transistor.state != new_state:
-                    transistor.state = new_state
-                    transistor_states_changed = True
-                    changed = True
+                gate_state = self.get_state_at_point(transistor.position)
+                transistor.state = (transistor.transistor_type == "n-type" and gate_state) or \
+                                (transistor.transistor_type == "p-type" and not gate_state)
 
-            # Rebuild the graph including 'on' transistors
-            graph = build_base_graph()
-            for transistor in self.transistors:
-                left_point = (transistor.position[0] - GRID_SPACING, transistor.position[1])
-                right_point = (transistor.position[0] + GRID_SPACING, transistor.position[1])
-                if transistor.state and transistor.transistor_type == "n-type":
-                    graph[left_point].append(right_point)
-                    graph[right_point].append(left_point)
-                if (not transistor.state) and transistor.transistor_type == "p-type":
-                    graph[left_point].append(right_point)
-                    graph[right_point].append(left_point)
-
-            # BFS to find on_points
-            new_on_points = set()
-            visited = set()
-            queue = list(on_points)
-            while queue:
-                current = queue.pop(0)
-                if current in visited:
-                    continue
-                visited.add(current)
-                new_on_points.add(current)
-                for neighbor in graph.get(current, []):
-                    if neighbor not in visited:
-                        queue.append(neighbor)
-
-            if new_on_points != on_points:
-                on_points = new_on_points
-                changed = True
-
-        # After convergence, update wire states
+        # update colors
         for wire in self.wires:
-            if wire.start_point in on_points or wire.end_point in on_points:
+            if wire.start_point in self.on_points or wire.end_point in self.on_points:
                 wire.state = True
-            else:
-                wire.state = False
 
-        # Update output node states
         for node in self.nodes:
             if node.node_type == 'output':
-                if node.position in on_points:
+                if node.position in self.on_points:
                     node.state = True
-                else:
-                    node.state = False
+
+    def propagate_signals(self, graph, input_nodes):
+        queue = deque(input_nodes)
+        visited = set(input_nodes)
+        
+        while queue:
+            current = queue.popleft()
+            for neighbor in graph[current]:
+                if neighbor not in visited:
+                    visited.add(neighbor)
+                    queue.append(neighbor)
+        return visited
 
 
     def get_nodes_in_rect(self, rect):
@@ -823,6 +906,11 @@ class Circuit:
 
         mouse_pos = pygame.mouse.get_pos()
 
+        # Draw transistors
+        for transistor in self.transistors:
+            is_hovered = transistor.is_hovered(self.grid, mouse_pos)
+            transistor.draw(self.grid, is_hovered)
+
         # Draw wires
         for wire in self.wires:
             is_hovered = wire.is_hovered(self.grid, mouse_pos)
@@ -832,17 +920,6 @@ class Circuit:
         for node in self.nodes:
             is_hovered = node.is_hovered(self.grid, mouse_pos)
             node.draw(self.grid, is_hovered)
-
-        # Draw transistors
-        for transistor in self.transistors:
-            is_hovered = transistor.is_hovered(self.grid, mouse_pos)
-            transistor.draw(self.grid, is_hovered)
-
-        # Draw larger points where wires join
-        connection_points = self.get_connection_points()
-        for point in connection_points:
-            screen_x, screen_y = self.grid.world_to_screen(*point)
-            pygame.draw.circle(screen, GREY, (int(screen_x), int(screen_y)), int(CONNECTION_SIZE * self.grid.scale))
 
         # Draw temporary wire if drawing
         if self.is_drawing_wire and self.wire_start_point:
@@ -862,7 +939,11 @@ class Circuit:
             start_x, start_y = self.grid.world_to_screen(
                 *self.wire_start_point)
             end_x, end_y = self.grid.world_to_screen(*end_point)
-            pygame.draw.line(screen, WHITE, (start_x, start_y), (end_x, end_y), WIRE_SIZE)
+
+            if (start_x, start_y) != (end_x, end_y):
+                pygame.draw.line(screen, WHITE, (start_x, start_y), (end_x, end_y), int(WIRE_SIZE * self.grid.scale))
+                pygame.draw.circle(screen, WHITE, (start_x, start_y), int(CONNECTION_SIZE * self.grid.scale))
+                pygame.draw.circle(screen, WHITE, (end_x, end_y), int(CONNECTION_SIZE * self.grid.scale))
 
         # Draw selection box if selecting
         if self.is_selecting:
@@ -896,32 +977,6 @@ class Circuit:
             screen.blit(s, (screen_left, screen_top))
             # Also draw a border
             pygame.draw.rect(screen, GREY, selection_rect, 1)
-
-    def get_connection_points(self):
-        # Find points where wires connect
-        points = []
-        point_counts = {}
-        for wire in self.wires:
-            for point in [wire.start_point, wire.end_point]:
-                if point in point_counts:
-                    point_counts[point] += 1
-                else:
-                    point_counts[point] = 1
-        for transistor in self.transistors:
-            if transistor.state:
-                left_point = (transistor.position[0] - GRID_SPACING,
-                              transistor.position[1])
-                right_point = (transistor.position[0] + GRID_SPACING,
-                               transistor.position[1])
-                for point in [left_point, right_point]:
-                    if point in point_counts:
-                        point_counts[point] += 1
-                    else:
-                        point_counts[point] = 1
-        for point, count in point_counts.items():
-            if count > 1:
-                points.append(point)
-        return points
 
     def run(self):
         running = True
