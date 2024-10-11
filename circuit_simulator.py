@@ -14,8 +14,8 @@ GRID_SPACING = 100
 MAX_GRID_POINTS = 20000
 FPS = 60
 
-# Frequency for Clock objects (number of state changes per 144 frames)
-CLOCK_FREQUENCY = 60  # Example: toggles twice every second
+# Frequency for Clock objects
+CLOCK_FREQUENCY = 60
 
 # Colors
 BLACK = (32, 32, 32)
@@ -29,15 +29,15 @@ LIGHTER_WHITE = (255, 255, 255)
 RED = (235, 0, 0)
 LIGHTER_RED = (255, 20, 20)
 
-P_OFF = (161, 157, 39)
-P_ON = (212, 206, 46)
-N_OFF = (166, 92, 55)
-N_ON = (212, 98, 41)
+P_OFF = (120, 120, 60)
+P_ON = (200, 200, 100)
+N_OFF = (120, 60, 60)
+N_ON = (200, 100, 100)
 
 W_OFF = (120, 120, 120)
-W_ON = (188, 245, 0)
+W_ON = (220, 220, 220)
 
-CLOCK_COLOR = WHITE  # White cube
+CLOCK_COLOR = LIGHTER_GREY  # White cube
 
 # Sizes
 WIRE_SIZE = 16
@@ -101,7 +101,7 @@ def draw_round_line(surface, color, start, end, width, radius):
     # Create a surface for the rectangle with per-pixel alpha
     rect_surface = pygame.Surface((distance, width), pygame.SRCALPHA)
 
-    radius_px = min(width // 2, int(width * radius))
+    radius_px = min(int(width / 2), int(width * radius))
 
     # Draw the rounded rectangle on the temporary surface
     pygame.draw.rect(
@@ -411,19 +411,20 @@ class Clock:
 
     def draw(self, grid, is_hovered=False):
         screen_x, screen_y = grid.world_to_screen(*self.position)
-        size = int(IO_POINT_SIZE * grid.scale)
+        size = int(GRID_SPACING * 0.6 * grid.scale)
+        side_distance = int(GRID_SPACING * 0.45 * grid.scale)
+        length = int(GRID_SPACING * 0.4 * grid.scale)
+        side_length = int(GRID_SPACING * 0.35 * grid.scale)
         
         color = CLOCK_COLOR if self.state else DARK_GREY
+        color2 = DARK_GREY if self.state else CLOCK_COLOR
         if is_hovered:
-            color = LIGHTER_WHITE if self.state else LIGHTER_GREY
+            color = LIGHTER_WHITE
         
         # Draw a square (clock)
-        pygame.draw.rect(screen, color, pygame.Rect(
-            screen_x - size // 2, screen_y - size // 2, size, size))
-        
-        # Optionally, draw a border
-        pygame.draw.rect(screen, WHITE, pygame.Rect(
-            screen_x - size // 2, screen_y - size // 2, size, size), 2)
+        draw_round_line(screen, color, (screen_x, screen_y-length), (screen_x, screen_y+length), size, 0.15)
+        draw_round_line(screen, color2, (screen_x-side_distance, screen_y-side_length), (screen_x-side_distance, screen_y+side_length), size/4, 0.5)
+        draw_round_line(screen, color2, (screen_x+side_distance, screen_y-side_length), (screen_x+side_distance, screen_y+side_length), size/4, 0.5)
 
     def update(self):
         self.frame_counter += 1
@@ -489,6 +490,9 @@ class Circuit:
         self.load_scroll_offset = 0  # For scrolling through load files
         self.load_selection_index = 0
 
+        # Variables to track dragging of wire endpoints
+        self.dragging_wire_endpoint = None  # Tuple: (Wire instance, 'start' or 'end')
+
     def get_saved_files(self):
         files = [f for f in os.listdir(SAVE_DIR) if f.endswith('.txt')]
         return files
@@ -511,6 +515,16 @@ class Circuit:
                 if not (self.save_dialog_active or self.load_dialog_active):
                     self.grid.start_panning()
             elif event.button == 1:  # Left mouse button
+                shift_pressed = pygame.key.get_mods() & pygame.KMOD_SHIFT
+                ctrl_pressed = pygame.key.get_mods() & pygame.KMOD_CTRL
+
+                if shift_pressed:
+                    # Check if the click is on a wire endpoint
+                    wire, endpoint = self.get_wire_endpoint_at_pos(event.pos)
+                    if wire and endpoint:
+                        self.dragging_wire_endpoint = (wire, endpoint)
+                        return  # Early return to prevent other actions
+
                 if self.save_dialog_active:
                     # Check if Save button is clicked
                     if self.is_click_on_save_button(event.pos):
@@ -541,12 +555,9 @@ class Circuit:
                         # Clicked outside the selection box, clear selection
                         self.clear_selection()
                 else:
-                    ctrl_pressed = pygame.key.get_mods() & pygame.KMOD_CTRL
-                    shift_pressed = pygame.key.get_mods() & pygame.KMOD_SHIFT
                     if ctrl_pressed:
                         # Start selection box
-                        world_x, world_y = self.grid.screen_to_world(
-                            *pygame.mouse.get_pos())
+                        world_x, world_y = self.grid.screen_to_world(*pygame.mouse.get_pos())
                         self.selection_start = (world_x, world_y)
                         self.selection_end = (world_x, world_y)
                         self.is_selecting = True
@@ -562,14 +573,10 @@ class Circuit:
                             self.is_moving_object = True
                             self.moving_object = obj
                             self.move_offset = pygame.mouse.get_pos()
-                    elif self.selection_rect_world:
-                        # Handled above
-                        pass
                     else:
                         if not self.drawing_disabled:
                             # Existing code for handling nodes, wires, etc.
-                            world_x, world_y = self.grid.screen_to_world(
-                                *pygame.mouse.get_pos())
+                            world_x, world_y = self.grid.screen_to_world(*pygame.mouse.get_pos())
                             grid_x = round(world_x / GRID_SPACING) * GRID_SPACING
                             grid_y = round(world_y / GRID_SPACING) * GRID_SPACING
                             position = (grid_x, grid_y)
@@ -579,36 +586,36 @@ class Circuit:
                             clock_obj = self.clock_at_position(position)
 
                             # Toggle input node regardless of mode
+                            toggling_node = False
                             if node and node.node_type == 'input':
                                 node.toggle()
-                                self.update_circuit_state()
+                                toggling_node = True
+                            
                             else:
                                 if self.mode == MODE_WIRE:
                                     # Start drawing wire if not clicking on a node or transistor
-                                    if not node and not transistor and not clock_obj:
+                                    if not toggling_node:
                                         self.is_drawing_wire = True
                                         self.wire_start_point = position
                                 elif self.mode == MODE_INPUT:
                                     # Place input node if position is empty
-                                    if not node and not transistor and not clock_obj:
-                                        self.nodes.append(
-                                            Node(position, 'input'))
+                                    if not toggling_node:
+                                        self.nodes.append(Node(position, 'input'))
                                 elif self.mode == MODE_OUTPUT:
                                     # Place output node if position is empty
-                                    if not node and not transistor and not clock_obj:
-                                        self.nodes.append(
-                                            Node(position, 'output'))
+                                    if not toggling_node:
+                                        self.nodes.append(Node(position, 'output'))
                                 elif self.mode == MODE_TRANSISTOR:
                                     # Place N-type transistor
-                                    if not node and not transistor and not clock_obj:
+                                    if not toggling_node:
                                         self.transistors.append(Transistor(position, transistor_type='n-type'))
                                 elif self.mode == MODE_P_TRANSISTOR:
                                     # Place P-type transistor
-                                    if not node and not transistor and not clock_obj:
+                                    if not toggling_node:
                                         self.transistors.append(Transistor(position, transistor_type='p-type'))
                                 elif self.mode == MODE_CLOCK:
                                     # Place Clock if position is empty
-                                    if not node and not transistor and not clock_obj:
+                                    if not toggling_node:
                                         self.clocks.append(Clock(position))
 
         # Mouse button up
@@ -617,6 +624,20 @@ class Circuit:
                 if not (self.save_dialog_active or self.load_dialog_active):
                     self.grid.stop_panning()
             elif event.button == 1:  # Left mouse button
+                if self.dragging_wire_endpoint:
+                    # Snap the dragged endpoint to the nearest grid point
+                    mouse_pos = pygame.mouse.get_pos()
+                    world_x, world_y = self.grid.screen_to_world(*mouse_pos)
+                    grid_x = round(world_x / GRID_SPACING) * GRID_SPACING
+                    grid_y = round(world_y / GRID_SPACING) * GRID_SPACING
+                    wire, endpoint = self.dragging_wire_endpoint
+                    if endpoint == 'start':
+                        wire.start_point = (grid_x, grid_y)
+                    elif endpoint == 'end':
+                        wire.end_point = (grid_x, grid_y)
+                    self.dragging_wire_endpoint = None
+                    return  # Early return to prevent other actions
+
                 if self.save_dialog_active:
                     pass  # Handled in MOUSEBUTTONDOWN
                 elif self.load_dialog_active:
@@ -631,17 +652,12 @@ class Circuit:
                     top = min(y1, y2)
                     width = abs(x2 - x1)
                     height = abs(y2 - y1)
-                    self.selection_rect_world = pygame.Rect(
-                        left, top, width, height)
+                    self.selection_rect_world = pygame.Rect(left, top, width, height)
                     # Find objects within the selection rectangle
-                    self.selected_nodes = self.get_nodes_in_rect(
-                        self.selection_rect_world)
-                    self.selected_wires = self.get_wires_in_rect(
-                        self.selection_rect_world)
-                    self.selected_transistors = self.get_transistors_in_rect(
-                        self.selection_rect_world)
-                    self.selected_clocks = self.get_clocks_in_rect(
-                        self.selection_rect_world)
+                    self.selected_nodes = self.get_nodes_in_rect(self.selection_rect_world)
+                    self.selected_wires = self.get_wires_in_rect(self.selection_rect_world)
+                    self.selected_transistors = self.get_transistors_in_rect(self.selection_rect_world)
+                    self.selected_clocks = self.get_clocks_in_rect(self.selection_rect_world)
                     # If no objects are selected, the selection box remains until a new selection is made
                     if not (self.selected_nodes or self.selected_wires or self.selected_transistors or self.selected_clocks):
                         self.clear_selection()
@@ -650,36 +666,25 @@ class Circuit:
                     self.is_moving_selection = False
                     # Snap positions to grid
                     for node in self.selected_nodes:
-                        grid_x = round(
-                            node.position[0] / GRID_SPACING) * GRID_SPACING
-                        grid_y = round(
-                            node.position[1] / GRID_SPACING) * GRID_SPACING
+                        grid_x = round(node.position[0] / GRID_SPACING) * GRID_SPACING
+                        grid_y = round(node.position[1] / GRID_SPACING) * GRID_SPACING
                         node.position = (grid_x, grid_y)
                     for transistor in self.selected_transistors:
-                        grid_x = round(
-                            transistor.position[0] / GRID_SPACING) * GRID_SPACING
-                        grid_y = round(
-                            transistor.position[1] / GRID_SPACING) * GRID_SPACING
+                        grid_x = round(transistor.position[0] / GRID_SPACING) * GRID_SPACING
+                        grid_y = round(transistor.position[1] / GRID_SPACING) * GRID_SPACING
                         transistor.position = (grid_x, grid_y)
                     for wire in self.selected_wires:
-                        start_x = round(
-                            wire.start_point[0] / GRID_SPACING) * GRID_SPACING
-                        start_y = round(
-                            wire.start_point[1] / GRID_SPACING) * GRID_SPACING
-                        end_x = round(
-                            wire.end_point[0] / GRID_SPACING) * GRID_SPACING
-                        end_y = round(
-                            wire.end_point[1] / GRID_SPACING) * GRID_SPACING
+                        start_x = round(wire.start_point[0] / GRID_SPACING) * GRID_SPACING
+                        start_y = round(wire.start_point[1] / GRID_SPACING) * GRID_SPACING
+                        end_x = round(wire.end_point[0] / GRID_SPACING) * GRID_SPACING
+                        end_y = round(wire.end_point[1] / GRID_SPACING) * GRID_SPACING
                         wire.start_point = (start_x, start_y)
                         wire.end_point = (end_x, end_y)
                     for clock in self.selected_clocks:
-                        grid_x = round(
-                            clock.position[0] / GRID_SPACING) * GRID_SPACING
-                        grid_y = round(
-                            clock.position[1] / GRID_SPACING) * GRID_SPACING
+                        grid_x = round(clock.position[0] / GRID_SPACING) * GRID_SPACING
+                        grid_y = round(clock.position[1] / GRID_SPACING) * GRID_SPACING
                         clock.position = (grid_x, grid_y)
-                    # Update circuit state
-                    self.update_circuit_state()
+                
                 elif self.is_moving_object:
                     self.is_moving_object = False
                     obj = self.moving_object
@@ -693,24 +698,17 @@ class Circuit:
                         obj.position = (grid_x, grid_y)
                     elif isinstance(obj, Clock):
                         obj.position = (grid_x, grid_y)
-                    self.update_circuit_state()
+                
                 elif self.is_drawing_wire:
-                    world_x, world_y = self.grid.screen_to_world(
-                        *pygame.mouse.get_pos())
+                    world_x, world_y = self.grid.screen_to_world(*pygame.mouse.get_pos())
                     grid_x = round(world_x / GRID_SPACING) * GRID_SPACING
                     grid_y = round(world_y / GRID_SPACING) * GRID_SPACING
+                    end_point = (grid_x, grid_y)
 
-                    # Enforce horizontal or vertical wires
-                    dx = abs(grid_x - self.wire_start_point[0])
-                    dy = abs(grid_y - self.wire_start_point[1])
-                    if dx > dy:
-                        end_point = (grid_x, self.wire_start_point[1])
-                    else:
-                        end_point = (self.wire_start_point[0], grid_y)
                     # Create wire
                     if not (end_point == self.wire_start_point):
                         self.wires.append(Wire(self.wire_start_point, end_point))
-                        self.update_circuit_state()
+                    
                     self.is_drawing_wire = False
 
         # Mouse motion
@@ -720,8 +718,7 @@ class Circuit:
                     self.grid.pan()
             elif self.is_selecting:
                 # Update selection box
-                world_x, world_y = self.grid.screen_to_world(
-                    *pygame.mouse.get_pos())
+                world_x, world_y = self.grid.screen_to_world(*pygame.mouse.get_pos())
                 self.selection_end = (world_x, world_y)
             elif self.is_moving_selection:
                 # Move selected objects
@@ -737,25 +734,20 @@ class Circuit:
 
                 # Move selected nodes
                 for node in self.selected_nodes:
-                    node.position = (
-                        node.position[0] + dx_world, node.position[1] + dy_world)
+                    node.position = (node.position[0] + dx_world, node.position[1] + dy_world)
 
                 # Move selected transistors
                 for transistor in self.selected_transistors:
-                    transistor.position = (
-                        transistor.position[0] + dx_world, transistor.position[1] + dy_world)
+                    transistor.position = (transistor.position[0] + dx_world, transistor.position[1] + dy_world)
 
                 # Move selected wires
                 for wire in self.selected_wires:
-                    wire.start_point = (
-                        wire.start_point[0] + dx_world, wire.start_point[1] + dy_world)
-                    wire.end_point = (
-                        wire.end_point[0] + dx_world, wire.end_point[1] + dy_world)
+                    wire.start_point = (wire.start_point[0] + dx_world, wire.start_point[1] + dy_world)
+                    wire.end_point = (wire.end_point[0] + dx_world, wire.end_point[1] + dy_world)
 
                 # Move selected Clocks
                 for clock in self.selected_clocks:
-                    clock.position = (
-                        clock.position[0] + dx_world, clock.position[1] + dy_world)
+                    clock.position = (clock.position[0] + dx_world, clock.position[1] + dy_world)
 
                 # Move selection rectangle
                 x, y = self.selection_rect_world.topleft
@@ -770,6 +762,17 @@ class Circuit:
                     self.moving_object.position = (world_x, world_y)
                 elif isinstance(self.moving_object, Clock):
                     self.moving_object.position = (world_x, world_y)
+            elif self.dragging_wire_endpoint:
+                # Update the position of the wire endpoint as the mouse moves
+                mouse_pos = pygame.mouse.get_pos()
+                world_x, world_y = self.grid.screen_to_world(*mouse_pos)
+                grid_x = round(world_x / GRID_SPACING) * GRID_SPACING
+                grid_y = round(world_y / GRID_SPACING) * GRID_SPACING
+                wire, endpoint = self.dragging_wire_endpoint
+                if endpoint == 'start':
+                    wire.start_point = (grid_x, grid_y)
+                elif endpoint == 'end':
+                    wire.end_point = (grid_x, grid_y)
 
         # Key press
         elif event.type == pygame.KEYDOWN:
@@ -829,8 +832,7 @@ class Circuit:
                     hovered_transistor = self.get_hovered_transistor()
                     if hovered_transistor:
                         hovered_transistor.rotate()
-                        self.update_circuit_state()
-
+                    
                 elif event.key == pygame.K_ESCAPE:
                     self.mode = MODE_NONE
                 elif event.key == pygame.K_BACKSPACE:
@@ -850,6 +852,7 @@ class Circuit:
                     if ctrl_pressed:
                         # Paste copied objects
                         self.paste_copied_objects()
+
 
     def is_click_on_save_button(self, pos):
         # Define Save button rectangle
@@ -930,25 +933,25 @@ class Circuit:
         node = self.get_hovered_node()
         if node:
             self.nodes.remove(node)
-            self.update_circuit_state()
+        
             return
         # Try to delete a transistor
         transistor = self.get_hovered_transistor()
         if transistor:
             self.transistors.remove(transistor)
-            self.update_circuit_state()
+        
             return
         # Try to delete a Clock
         clock = self.get_hovered_clock()
         if clock:
             self.clocks.remove(clock)
-            self.update_circuit_state()
+        
             return
         # Try to delete a wire
         wire = self.get_hovered_wire()
         if wire:
             self.wires.remove(wire)
-            self.update_circuit_state()
+        
 
     def get_state_at_point(self, point):
         if point in self.on_points:
@@ -1002,6 +1005,7 @@ class Circuit:
             clock.update()
 
         previous_states = None
+        previous_previous_states = None
         iter = 0
         while True:
             if iter > 10000:
@@ -1016,8 +1020,11 @@ class Circuit:
             self.on_points = self.propagate_signals(graph, all_input_points)
 
             current_states = (self.on_points, tuple(transistor.state for transistor in self.transistors))
-            if current_states == previous_states:
+            if current_states == previous_states or current_states == previous_previous_states:
+                if current_states == previous_previous_states:
+                    print("CIRCUIT OSSCILATION DETECTED!")
                 break
+            previous_previous_states = previous_states
             previous_states = current_states
 
             # Update states
@@ -1153,6 +1160,24 @@ class Circuit:
         text_rect = button_text.get_rect(center=button_rect.center)
         screen.blit(button_text, text_rect)
 
+    def get_wire_endpoint_at_pos(self, pos):
+        """
+        Checks if the given screen position is on any wire's start or end point.
+        Returns a tuple of (Wire instance, 'start' or 'end') if found, else (None, None).
+        """
+        mouse_x, mouse_y = pos
+        for wire in self.wires:
+            start_screen = self.grid.world_to_screen(*wire.start_point)
+            end_screen = self.grid.world_to_screen(*wire.end_point)
+            distance_start = math.hypot(mouse_x - start_screen[0], mouse_y - start_screen[1])
+            distance_end = math.hypot(mouse_x - end_screen[0], mouse_y - end_screen[1])
+            threshold = CONNECTION_SIZE * self.grid.scale + 5  # Add a small buffer
+            if distance_start <= threshold:
+                return wire, 'start'
+            if distance_end <= threshold:
+                return wire, 'end'
+        return None, None
+
     def draw(self):
         self.grid.draw()
 
@@ -1171,12 +1196,16 @@ class Circuit:
         # Draw wires
         for wire in self.wires:
             is_hovered = wire.is_hovered(self.grid, mouse_pos)
-            wire.draw(self.grid, is_hovered)
+            # Highlight wire if it's being dragged
+            if self.dragging_wire_endpoint and wire == self.dragging_wire_endpoint[0]:
+                wire.draw(self.grid, is_hovered=True)  # Force hover effect
+            else:
+                wire.draw(self.grid, is_hovered=is_hovered)
 
         # Draw nodes
         for node in self.nodes:
             is_hovered = node.is_hovered(self.grid, mouse_pos)
-            node.draw(self.grid, is_hovered)
+            node.draw(self.grid, is_hovered=is_hovered)
 
         # Draw temporary wire if drawing
         if self.is_drawing_wire and self.wire_start_point:
@@ -1184,17 +1213,9 @@ class Circuit:
             world_x, world_y = self.grid.screen_to_world(*mouse_pos)
             grid_x = round(world_x / GRID_SPACING) * GRID_SPACING
             grid_y = round(world_y / GRID_SPACING) * GRID_SPACING
+            end_point = (grid_x, grid_y)
 
-            # Enforce horizontal or vertical wires
-            dx = abs(grid_x - self.wire_start_point[0])
-            dy = abs(grid_y - self.wire_start_point[1])
-            if dx > dy:
-                end_point = (grid_x, self.wire_start_point[1])
-            else:
-                end_point = (self.wire_start_point[0], grid_y)
-
-            start_x, start_y = self.grid.world_to_screen(
-                *self.wire_start_point)
+            start_x, start_y = self.grid.world_to_screen(*self.wire_start_point)
             end_x, end_y = self.grid.world_to_screen(*end_point)
 
             if (start_x, start_y) != (end_x, end_y):
@@ -1226,10 +1247,8 @@ class Circuit:
             screen_left, screen_top = self.grid.world_to_screen(left, top)
             screen_width = width * self.grid.scale
             screen_height = height * self.grid.scale
-            selection_rect = pygame.Rect(
-                screen_left, screen_top, screen_width, screen_height)
-            s = pygame.Surface(
-                (screen_width, screen_height), pygame.SRCALPHA)
+            selection_rect = pygame.Rect(screen_left, screen_top, screen_width, screen_height)
+            s = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
             s.fill((128, 128, 128, 100))  # Semi-transparent grey
             screen.blit(s, (screen_left, screen_top))
             # Also draw a border
@@ -1242,7 +1261,6 @@ class Circuit:
         # Draw Load Dialog
         if self.load_dialog_active:
             self.draw_load_dialog()
-
     def run(self):
         running = True
         while running:
@@ -1352,8 +1370,8 @@ class Circuit:
             new_clocks.append(new_clock)
         self.clocks.extend(new_clocks)
 
-        # Update circuit state
-        self.update_circuit_state()
+    
+    
 
     def get_selection_center(self):
         # Calculate the center of the selection
@@ -1392,7 +1410,7 @@ class Circuit:
         for clock in self.selected_clocks:
             if clock in self.clocks:
                 self.clocks.remove(clock)
-        self.update_circuit_state()
+    
 
     def node_at_position(self, position):
         for node in self.nodes:
@@ -1492,8 +1510,8 @@ class Circuit:
             clock_obj.state = clock_data["state"]
             self.clocks.append(clock_obj)
 
-        # Update circuit state
-        self.update_circuit_state()
+    
+    
         print(f"Circuit loaded from {filepath}")
 
     def draw_save_dialog(self):
