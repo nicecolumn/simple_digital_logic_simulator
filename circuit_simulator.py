@@ -9,6 +9,9 @@ from components import Wire, Grid, Transistor, Clock, Node
 from constants import *
 from OpenGL.GL import *
 from OpenGL.GLU import *
+import graphics
+import numpy as np
+
 
 pygame.init()
 
@@ -297,6 +300,9 @@ class Game:
         self.simulation_running = False
         self.simulation_time = 0
 
+        # Graphics
+        self.renderer = graphics.Renderer(WIDTH, HEIGHT)
+
     def get_saved_files(self):
         files = [f for f in os.listdir(SAVE_DIR) if f.endswith('.txt')]
         return files
@@ -408,8 +414,12 @@ class Game:
                             if self.mode == MODE_WIRE:
                                 # Start drawing wire if not clicking on a node or transistor
                                 if not toggling_node:
-                                    self.is_drawing_wire = True
-                                    self.wire_start_point = position
+                                    wire = Wire(position, position)
+                                    self.circuit.add_wire(wire)
+                                    endpoint = position
+                                    self.dragging_wire_endpoint = (wire, 'end')
+                                    #self.is_drawing_wire = wire
+                                    #self.wire_start_point = position
                             elif self.mode == MODE_INPUT:
                                 # Place input node if position is empty
                                 if not toggling_node:
@@ -524,10 +534,11 @@ class Game:
                 end_point = (grid_x, grid_y)
 
                 # Create wire
-                if not (end_point == self.wire_start_point):
-                    self.circuit.add_wire(Wire(self.wire_start_point, end_point))
+                if end_point == self.wire_start_point:
+                    self.circuit.remove_wire(self.is_drawing_wire)
+                    #self.circuit.add_wire(Wire(self.wire_start_point, end_point))
 
-                self.is_drawing_wire = False
+                self.is_drawing_wire = None
                 self.wire_start_point = None
 
     def handle_mouse_motion(self, event):
@@ -909,161 +920,26 @@ class Game:
 
         print(f"Circuit loaded from {filepath}")
 
-    def draw_save_dialog(self):
-        # Define dialog area
-        dialog_width = 300
-        dialog_height = 100
-        dialog_x = 20
-        dialog_y = HEIGHT - dialog_height - 20
-        dialog_rect = pygame.Rect(dialog_x, dialog_y, dialog_width, dialog_height)
-        pygame.draw.rect(screen, DARK_GREY, dialog_rect)
-        pygame.draw.rect(screen, WHITE, dialog_rect, 2)
-
-        # Label
-        label_text = BIG_FONT.render("Save Circuit", True, WHITE)
-        screen.blit(label_text, (dialog_x + 10, dialog_y + 10))
-
-        # Input box
-        input_box_rect = pygame.Rect(dialog_x + 10, dialog_y + 50, 200, 30)
-        pygame.draw.rect(screen, WHITE, input_box_rect, 2)
-        input_text = FONT.render(self.save_filename, True, WHITE)
-        screen.blit(input_text, (input_box_rect.x + 5, input_box_rect.y + 5))
-
-        # Save button
-        button_rect = pygame.Rect(dialog_x + 220, dialog_y + 50, 70, 30)
-        pygame.draw.rect(screen, GREY, button_rect)
-        pygame.draw.rect(screen, WHITE, button_rect, 2)
-        button_text = FONT.render("Save", True, BLACK)
-        text_rect = button_text.get_rect(center=button_rect.center)
-        screen.blit(button_text, text_rect)
-
-    def draw_load_dialog(self):
-        # Define dialog area
-        dialog_width = WIDTH - 40
-        dialog_height = HEIGHT - 60
-        dialog_x = 20
-        dialog_y = 20
-        dialog_rect = pygame.Rect(dialog_x, dialog_y, dialog_width, dialog_height)
-        pygame.draw.rect(screen, DARK_GREY, dialog_rect)
-        pygame.draw.rect(screen, WHITE, dialog_rect, 2)
-
-        # Label
-        label_text = BIG_FONT.render("Load Circuit", True, WHITE)
-        screen.blit(label_text, (dialog_x + 10, dialog_y + 10))
-
-        # List of files
-        list_x = dialog_x + 10
-        list_y = dialog_y + 50
-        item_height = 30
-        max_visible = (dialog_height - 70) // item_height
-        visible_files = self.load_files[self.load_scroll_offset:self.load_scroll_offset + max_visible]
-        for index, file in enumerate(visible_files):
-            file_rect = pygame.Rect(list_x, list_y + index * item_height, dialog_width - 20, item_height)
-            actual_index = index + self.load_scroll_offset
-            if actual_index == self.load_selection_index:
-                color = LIGHTER_GREY
-            else:
-                color = DARK_GREY
-            pygame.draw.rect(screen, color, file_rect)
-            pygame.draw.rect(screen, WHITE, file_rect, 1)
-            file_text = FONT.render(file, True, WHITE)
-            screen.blit(file_text, (file_rect.x + 5, file_rect.y + 5))
-
-        # Load button
-        button_width = 100
-        button_height = 40
-        button_x = dialog_x + dialog_width - button_width - 20
-        button_y = dialog_y + dialog_height - button_height - 20
-        button_rect = pygame.Rect(button_x, button_y, button_width, button_height)
-        pygame.draw.rect(screen, GREY, button_rect)
-        pygame.draw.rect(screen, WHITE, button_rect, 2)
-        button_text = FONT.render("Load", True, BLACK)
-        text_rect = button_text.get_rect(center=button_rect.center)
-        screen.blit(button_text, text_rect)
-
     def draw(self):
-        self.grid.draw()
-
         mouse_pos = pygame.mouse.get_pos()
-
-        # Draw Clocks
-        for clock in self.circuit.clocks:
-            is_hovered = clock.is_hovered(self.grid, mouse_pos)
-            clock.draw(self.grid, is_hovered)
-
-        # Draw transistors
-        for transistor in self.circuit.transistors:
-            is_hovered = transistor.is_hovered(self.grid, mouse_pos)
-            transistor.draw(self.grid, is_hovered)
-
-        # Draw wires
-        for wire in self.circuit.wires:
-            is_hovered = wire.is_hovered(self.grid, mouse_pos)
-            # Highlight wire if it's being dragged
-            if self.dragging_wire_endpoint and wire == self.dragging_wire_endpoint[0]:
-                wire.draw(self.grid, is_hovered=True)  # Force hover effect
-            else:
-                wire.draw(self.grid, is_hovered=is_hovered)
-
-        # Draw nodes
-        for node in self.circuit.nodes:
-            is_hovered = node.is_hovered(self.grid, mouse_pos)
-            node.draw(self.grid, is_hovered=is_hovered)
-
-        # Draw temporary wire if drawing
-        if self.is_drawing_wire and self.wire_start_point:
-            mouse_x, mouse_y = pygame.mouse.get_pos()
-            world_x, world_y = self.grid.screen_to_world(mouse_x, mouse_y)
-            grid_x = round(world_x / GRID_SPACING) * GRID_SPACING
-            grid_y = round(world_y / GRID_SPACING) * GRID_SPACING
-            end_point = (grid_x, grid_y)
-
-            start_x, start_y = self.grid.world_to_screen(*self.wire_start_point)
-            end_x, end_y = self.grid.world_to_screen(*end_point)
-
-            if (start_x, start_y) != (end_x, end_y):
-                pygame.draw.line(screen, WHITE, (start_x, start_y), (end_x, end_y), int(WIRE_SIZE * self.grid.scale))
-                pygame.draw.circle(screen, WHITE, (start_x, start_y), int(CONNECTION_SIZE * self.grid.scale))
-                pygame.draw.circle(screen, WHITE, (end_x, end_y), int(CONNECTION_SIZE * self.grid.scale))
-
-        # Draw selection box if selecting
-        if self.is_selecting:
-            x1, y1 = self.selection_start
-            x2, y2 = self.selection_end
-            screen_x1, screen_y1 = self.grid.world_to_screen(x1, y1)
-            screen_x2, screen_y2 = self.grid.world_to_screen(x2, y2)
-            left = min(screen_x1, screen_x2)
-            top = min(screen_y1, screen_y2)
-            width = abs(screen_x2 - screen_x1)
-            height = abs(screen_y2 - screen_y1)
-            selection_rect = pygame.Rect(left, top, width, height)
-            s = pygame.Surface((width, height), pygame.SRCALPHA)
-            s.fill((128, 128, 128, 100))  # Semi-transparent grey
-            screen.blit(s, (left, top))
-            pygame.draw.rect(screen, GREY, selection_rect, 1)
-
-        # Draw selection rectangle if exists
-        elif self.selection_rect_world:
-            left, top = self.selection_rect_world.topleft
-            width = self.selection_rect_world.width
-            height = self.selection_rect_world.height
-            screen_left, screen_top = self.grid.world_to_screen(left, top)
-            screen_width = width * self.grid.scale
-            screen_height = height * self.grid.scale
-            selection_rect = pygame.Rect(screen_left, screen_top, screen_width, screen_height)
-            s = pygame.Surface((screen_width, screen_height), pygame.SRCALPHA)
-            s.fill((128, 128, 128, 100))  # Semi-transparent grey
-            screen.blit(s, (screen_left, screen_top))
-            # Also draw a border
-            pygame.draw.rect(screen, GREY, selection_rect, 1)
-
-        # Draw Save Dialog
-        if self.save_dialog_active:
-            self.draw_save_dialog()
-
-        # Draw Load Dialog
-        if self.load_dialog_active:
-            self.draw_load_dialog()
+        self.renderer.draw(
+            self.grid,
+            self.circuit,
+            mouse_pos,
+            dragging_wire_endpoint=None,  # Replace with actual dragging logic
+            is_drawing_wire=False,        # Replace with actual wire drawing logic
+            wire_start_point=None,        # Replace with actual wire start point
+            is_selecting=False,           # Replace with actual selection logic
+            selection_start=None,         # Replace with actual selection start
+            selection_end=None,           # Replace with actual selection end
+            selection_rect_world=None,    # Replace with actual selection rectangle
+            save_dialog_active=self.save_dialog_active,
+            load_dialog_active=self.load_dialog_active,
+            save_filename=self.save_filename,
+            load_files=self.load_files,
+            load_scroll_offset=self.load_scroll_offset,
+            load_selection_index=self.load_selection_index
+        )
 
     def run(self):
         running = True
@@ -1078,6 +954,54 @@ class Game:
             glClearColor(0.0, 0.0, 0.0, 1.0)  # Black background
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
             glLoadIdentity()
+
+            # main.py or your main application file
+
+            # After initializing the renderer
+            self.renderer.begin_colored_batch()
+
+            # Draw a red rectangle
+            red_color = [1.0, 1.0, 1.0, 1.0]  # Pure Red
+            red_vertices = np.array([
+                [100, 100],
+                [200, 100],
+                [200, 200],
+                [200, 200],
+                [100, 200],
+                [100, 100],
+            ], dtype=np.float32)
+            red_colors = np.array([red_color] * 6, dtype=np.float32)
+            self.renderer.add_colored_vertices(red_vertices, red_colors)
+
+            # Draw a green rectangle
+            green_color = [0.0, 1.0, 0.0, 1.0]  # Pure Green
+            green_vertices = np.array([
+                [250, 100],
+                [350, 100],
+                [350, 200],
+                [350, 200],
+                [250, 200],
+                [250, 100],
+            ], dtype=np.float32)
+            green_colors = np.array([green_color] * 6, dtype=np.float32)
+            self.renderer.add_colored_vertices(green_vertices, green_colors)
+
+            # Draw a blue rectangle
+            blue_color = [0.0, 0.0, 1.0, 1.0]  # Pure Blue
+            blue_vertices = np.array([
+                [400, 100],
+                [500, 100],
+                [500, 200],
+                [500, 200],
+                [400, 200],
+                [400, 100],
+            ], dtype=np.float32)
+            blue_colors = np.array([blue_color] * 6, dtype=np.float32)
+            self.renderer.add_colored_vertices(blue_vertices, blue_colors)
+
+            # Finalize and draw the batch
+            self.renderer.end_colored_batch()
+
 
             # Update simulation
             if self.simulation_running:
