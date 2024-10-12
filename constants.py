@@ -5,7 +5,7 @@ MAX_GRID_POINTS = 20000
 FPS = 60
 
 # Frequency for Clock objects
-CLOCK_FREQUENCY = 60
+CLOCK_FREQUENCY = 16
 
 # Colors
 BLACK = (32, 32, 32)
@@ -44,3 +44,5 @@ MODE_OUTPUT = 'output'
 MODE_TRANSISTOR = 'transistor'
 MODE_P_TRANSISTOR = 'p_transistor'
 MODE_CLOCK = 'clock'
+
+SIMULATION_SPEED = 1 # number of frames between updates
