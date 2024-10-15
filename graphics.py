@@ -857,50 +857,6 @@ class Renderer:
             is_hovered = clock.is_hovered(grid, mouse_pos)
             clock.add_vertices_to_batch(self, grid, is_hovered)
 
-        # Draw temporary wire if drawing
-        if is_drawing_wire and wire_start_point:
-            # Calculate the end point snapped to grid
-            mouse_x, mouse_y = mouse_pos
-            world_x, world_y = grid.screen_to_world(mouse_x, mouse_y)
-            grid_x = round(world_x / GRID_SPACING) * GRID_SPACING
-            grid_y = round(world_y / GRID_SPACING) * GRID_SPACING
-            end_point = (grid_x, grid_y)
-
-            start_x, start_y = grid.world_to_screen(*wire_start_point)
-            end_x, end_y = grid.world_to_screen(*end_point)
-
-            if (start_x, start_y) != (end_x, end_y):
-                # Define a temporary wire with white color
-                color = WHITE
-                wire_width = int(WIRE_SIZE * grid.scale)
-
-                # Calculate the direction and perpendicular vectors
-                dx = end_x - start_x
-                dy = end_y - start_y
-                length = math.hypot(dx, dy)
-                if length != 0:
-                    px = -dy / length
-                    py = dx / length
-
-                    half_width = wire_width / 2
-                    vertices = [
-                        [start_x + px * half_width, start_y + py * half_width],
-                        [end_x + px * half_width, end_y + py * half_width],
-                        [end_x - px * half_width, end_y - py * half_width],
-
-                        [end_x - px * half_width, end_y - py * half_width],
-                        [start_x - px * half_width, start_y - py * half_width],
-                        [start_x + px * half_width, start_y + py * half_width],
-                    ]
-
-                    # Normalize color
-                    color_rgba = [c / 255.0 for c in color[:3]] + [1.0]
-                    colors_array = np.array([color_rgba] * 6, dtype=np.float32)
-
-                    positions = np.array(vertices, dtype=np.float32)
-
-                    self.add_vertices(positions, colors_array)
-
         # Draw selection box if selecting
         if is_selecting and selection_start and selection_end:
             x1, y1 = selection_start

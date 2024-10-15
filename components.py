@@ -3,6 +3,7 @@ import math
 import numpy as np
 import pygame
 from constants import *
+from utils import *
 
 class Grid:
     def __init__(self, screen, width, height):
@@ -107,11 +108,12 @@ class Wire:
         self.start_point = start_point  # (x, y)
         self.end_point = end_point      # (x, y)
         self.state = False  # False = OFF, True = ON
+        self.is_selected = False
 
     def add_vertices_to_batch(self, renderer, grid, is_hovered=False):
         color = W_ON if self.state else W_OFF
 
-        if is_hovered:
+        if is_hovered or self.is_selected:
             color = tuple(min(255, c + 50) for c in color)
 
         start_x, start_y = grid.world_to_screen(*self.start_point)
@@ -186,42 +188,17 @@ class Node:
         self.position = position  # (x, y)
         self.node_type = node_type  # 'input' or 'output'
         self.state = False if self.node_type == 'input' else False  # Inputs can toggle
+        self.is_selected = False
 
     def add_vertices_to_batch(self, renderer, grid, is_hovered=False):
         screen_x, screen_y = grid.world_to_screen(*self.position)
         radius = max(1, int(IO_POINT_SIZE * grid.scale))
 
         color = YELLOW if self.state else WHITE
-        if is_hovered:
+        if is_hovered or self.is_selected:
             color = tuple(min(255, c + 50) for c in color)
 
-        # Define a circle using triangles (triangle fan)
-        segments = max(6, int(radius))  # Adjust number of segments based on radius
-        angle_increment = 2 * math.pi / segments
-        vertices = []
-        colors_rgba = []
-
-        # Center vertex
-        vertices.append([screen_x, screen_y])
-        colors_rgba.append([c / 255.0 for c in color[:3]] + [1.0])
-
-        for i in range(segments + 1):
-            angle = i * angle_increment
-            x = screen_x + math.cos(angle) * radius
-            y = screen_y + math.sin(angle) * radius
-            vertices.append([x, y])
-            colors_rgba.append([c / 255.0 for c in color[:3]] + [1.0])
-
-        # Create triangles (triangle fan)
-        triangles = []
-        for i in range(1, len(vertices) - 1):
-            triangles.extend([vertices[0], vertices[i], vertices[i + 1]])
-
-        positions = np.array(triangles, dtype=np.float32)
-        # Assign the same color to each vertex
-        colors_array = np.array([colors_rgba[0]] * len(triangles), dtype=np.float32)
-
-        renderer.add_vertices(positions, colors_array)
+        draw_circle(renderer, screen_x, screen_y, color, radius)
 
     def toggle(self):
         if self.node_type == 'input':
@@ -239,6 +216,7 @@ class Transistor:
         self.state = False if transistor_type == 'n-type' else False  # False = OFF, True = ON
         self.transistor_type = transistor_type  # 'n-type' or 'p-type'
         self.orientation = orientation  # 'horizontal' or 'vertical'
+        self.is_selected = False
 
     def rotate(self):
         if self.orientation == 'horizontal':
@@ -262,7 +240,7 @@ class Transistor:
                 color_a = P_ON
                 color_b = N_OFF
 
-        if is_hovered:
+        if is_hovered or self.is_selected:
             color_a = tuple(min(255, c + 5) for c in color_a)
             color_b = tuple(min(255, c + 5) for c in color_b)
 
@@ -368,8 +346,9 @@ class Clock:
     def __init__(self, position, frequency=CLOCK_FREQUENCY):
         self.position = position  # (x, y)
         self.state = False  # False = OFF, True = ON
-        self.frequency = frequency  # Toggles per 144 frames
+        self.frequency = frequency
         self.frame_counter = 0  # Counter to track frames
+        self.is_selected = False
 
     def add_vertices_to_batch(self, renderer, grid, is_hovered=False):
         screen_x, screen_y = grid.world_to_screen(*self.position)
@@ -380,7 +359,7 @@ class Clock:
 
         color = list(CLOCK_COLOR[:3]) + ([CLOCK_COLOR[3] / 255.0] if len(CLOCK_COLOR) > 3 else [1.0])
         color2 = list(DARK_GREY[:3]) + ([DARK_GREY[3] / 255.0] if len(DARK_GREY) > 3 else [1.0])
-        if is_hovered:
+        if is_hovered or self.is_selected:
             color = tuple(min(1.0, c + 0.2) for c in color)  # Lighten color
             color2 = tuple(min(1.0, c + 0.2) for c in color2)
 

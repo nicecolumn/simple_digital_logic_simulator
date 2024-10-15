@@ -1,5 +1,3 @@
-# constants.py
-
 # Screen dimensions
 WIDTH, HEIGHT = 1440, 896
 

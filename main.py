@@ -11,13 +11,12 @@ from constants import *
 from OpenGL.GL import *
 from OpenGL.GLU import *
 import graphics
-import numpy as np
 
 pygame.init()
 
 # Initialize global screen and clock
 #screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
-screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.OPENGL | pygame.DOUBLEBUF)
+screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.OPENGL | pygame.DOUBLEBUF | pygame.RESIZABLE)
 
 pygame.display.set_caption("Circuit Simulator")
 clock = pygame.time.Clock()
@@ -324,10 +323,13 @@ class Game:
     def handle_resize(self, event):
         global screen, WIDTH, HEIGHT
         WIDTH, HEIGHT = event.w, event.h
-        screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
+        screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.OPENGL | pygame.DOUBLEBUF | pygame.RESIZABLE)
+        self.renderer.cleanup()
+        self.renderer = graphics.Renderer(WIDTH, HEIGHT)
         self.grid.screen = screen
         self.grid.width = WIDTH
         self.grid.height = HEIGHT
+
 
     def handle_zoom(self, event):
         if not (self.save_dialog_active or self.load_dialog_active):
@@ -489,6 +491,15 @@ class Game:
                 # If no objects are selected, clear selection
                 if not (self.selected_nodes or self.selected_wires or self.selected_transistors or self.selected_clocks):
                     self.clear_selection()
+                else:
+                    for node in self.selected_nodes:
+                        node.is_selected = True
+                    for wire in self.selected_wires:
+                        wire.is_selected = True
+                    for transistor in self.selected_transistors:
+                        transistor.is_selected = True
+                    for clock in self.selected_clocks:
+                        clock.is_selected = True
             elif self.is_moving_selection:
                 # Finish moving selection
                 self.is_moving_selection = False
@@ -754,6 +765,14 @@ class Game:
         return self.selection_rect_world.collidepoint(world_x, world_y)
 
     def clear_selection(self):
+        for node in self.selected_nodes:
+            node.is_selected = False
+        for wire in self.selected_wires:
+            wire.is_selected = False
+        for transistor in self.selected_transistors:
+            transistor.is_selected = False
+        for clock in self.selected_clocks:
+            clock.is_selected = False
         self.selection_rect_world = None
         self.selected_nodes = []
         self.selected_wires = []
@@ -922,13 +941,6 @@ class Game:
                     running = False
                 else:
                     self.handle_event(event)
-
-            # Clear screen
-            glClearColor(0.0, 0.0, 0.0, 1.0)  # Black background
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-            glLoadIdentity()
-
-            graphics.check_gl_errors()
 
             # Update simulation
             if self.simulation_running:
