@@ -1,10 +1,8 @@
-# components.py
 
 import math
 import numpy as np
 import pygame
 from constants import *
-from graphics import Renderer
 
 class Grid:
     def __init__(self, screen, width, height):
@@ -73,6 +71,21 @@ class Grid:
         num_grid_x = int((grid_x_end - grid_x_start) / GRID_SPACING) + 1
         num_grid_y = int((grid_y_end - grid_y_start) / GRID_SPACING) + 1
 
+
+        # Background
+        positions = np.array([[0.0, 0.0], [0.0, self.height], [self.width, self.height]])
+        bg = [c / 255.0 for c in BLACK[:3]] + [1.0]
+        bg = [bg for _ in range(len(positions))]
+        bg = np.array(bg).astype(np.float32)
+        renderer.add_vertices(positions, bg)
+        
+        positions = np.array([[0.0, 0.0], [self.width, 0.0], [self.width, self.height]])
+        bg = [c / 255.0 for c in BLACK[:3]] + [1.0]
+        bg = [bg for _ in range(len(positions))]
+        bg = np.array(bg).astype(np.float32)
+        renderer.add_vertices(positions, bg)
+
+
         if num_grid_x * num_grid_y < MAX_GRID_POINTS:
             positions = []
             colors = []
@@ -129,11 +142,12 @@ class Wire:
 
         # Define colors for each vertex
         color_rgba = [c / 255.0 for c in color[:3]] + [1.0]
-        colors_array = np.array([color_rgba] * 6, dtype=np.float32)
+        colors_rgba = [color_rgba] * 6
+        colors_array = np.array(colors_rgba, dtype=np.float32)
 
         positions = np.array(vertices, dtype=np.float32)
 
-        renderer.add_colored_vertices(positions, colors_array)  # Updated method
+        renderer.add_vertices(positions, colors_array)
 
     def is_hovered(self, grid, mouse_pos):
         # Check if mouse is close to the wire
@@ -207,7 +221,7 @@ class Node:
         # Assign the same color to each vertex
         colors_array = np.array([colors_rgba[0]] * len(triangles), dtype=np.float32)
 
-        renderer.add_colored_vertices(positions, colors_array)  # Updated method
+        renderer.add_vertices(positions, colors_array)
 
     def toggle(self):
         if self.node_type == 'input':
@@ -337,11 +351,12 @@ class Transistor:
 
         # Define colors for each vertex
         color_rgba = [c / 255.0 for c in color[:3]] + [1.0]
-        colors_array = np.array([color_rgba] * 6, dtype=np.float32)
+        colors_rgba = [color_rgba] * 6
+        colors_array = np.array(colors_rgba, dtype=np.float32)
 
         positions = np.array(vertices, dtype=np.float32)
 
-        renderer.add_colored_vertices(positions, colors_array)  # Updated method
+        renderer.add_vertices(positions, colors_array)
 
     def is_hovered(self, grid, mouse_pos):
         screen_x, screen_y = grid.world_to_screen(*self.position)
@@ -409,11 +424,12 @@ class Clock:
         color_rgba = list(color)
         if len(color_rgba) < 4:
             color_rgba.append(1.0)
-        colors_array = np.array([color_rgba] * 6, dtype=np.float32)
+        colors_rgba = [color_rgba] * 6
+        colors_array = np.array(colors_rgba, dtype=np.float32)
 
         positions = np.array(vertices, dtype=np.float32)
 
-        renderer.add_colored_vertices(positions, colors_array)  # Updated method
+        renderer.add_vertices(positions, colors_array)
 
     def update(self):
         self.frame_counter += 1

@@ -1,25 +1,18 @@
-# graphics.py
-
 from OpenGL.GL import *
 from OpenGL.GLU import *
 import pygame
 import numpy as np
 import math
+from constants import *
 import ctypes
-from constants import WHITE, BLACK, RED, GREEN, BLUE, GREY, DARK_GREY, LIGHTER_GREY  # Ensure constants.py is correctly set up
 
-# ------------------------------------------
-# Shader Source Codes for Colored Rendering
-# ------------------------------------------
-
-# Vertex Shader: Processes vertex positions and colors
-vertex_shader_colored_source = """
+# Shader source code
+vertex_shader_source = """
 #version 330 core
-layout(location = 0) in vec2 position;  // Vertex position
-layout(location = 1) in vec4 color;     // Vertex color
-uniform mat4 projection;                // Orthographic projection matrix
-out vec4 vertexColor;                    // Passed to fragment shader
-
+layout(location = 0) in vec2 position;
+layout(location = 1) in vec4 color;
+uniform mat4 projection;
+out vec4 vertexColor;
 void main()
 {
     gl_Position = projection * vec4(position, 0.0, 1.0);
@@ -27,53 +20,55 @@ void main()
 }
 """
 
-# Fragment Shader: Outputs the interpolated color
-fragment_shader_colored_source = """
+fragment_shader_source = """
 #version 330 core
-in vec4 vertexColor;    // Received from vertex shader
-out vec4 FragColor;     // Final pixel color
-
+in vec4 vertexColor;
+out vec4 FragColor;
 void main()
 {
     FragColor = vertexColor;
 }
 """
 
-# ------------------------------------------
-# Shader Source Codes for Textured Rendering
-# ------------------------------------------
-
-# Vertex Shader: Processes vertex positions and texture coordinates
-vertex_shader_textured_source = """
+# Shader source code for textures
+texture_vertex_shader_source = """
 #version 330 core
-layout(location = 0) in vec2 position;    // Vertex position
-layout(location = 1) in vec2 texCoord;    // Texture coordinate
-uniform mat4 projection;                  // Orthographic projection matrix
-out vec2 v_texCoord;                      // Passed to fragment shader
-
+layout(location = 0) in vec2 position;
+layout(location = 1) in vec2 texCoord;
+uniform mat4 projection;
+out vec2 TexCoord;
 void main()
 {
     gl_Position = projection * vec4(position, 0.0, 1.0);
-    v_texCoord = texCoord;
+    TexCoord = texCoord;
 }
 """
 
-# Fragment Shader: Samples the texture and outputs the color
-fragment_shader_textured_source = """
+texture_fragment_shader_source = """
 #version 330 core
-in vec2 v_texCoord;      // Received from vertex shader
-out vec4 FragColor;      // Final pixel color
-uniform sampler2D textTexture; // Texture sampler
-
+in vec2 TexCoord;
+out vec4 FragColor;
+uniform sampler2D textTexture;
 void main()
 {
-    FragColor = texture(textTexture, v_texCoord);
+    FragColor = texture(textTexture, TexCoord);
 }
 """
 
-# ------------------------------------------
-# Shader Compilation and Program Linking
-# ------------------------------------------
+def check_gl_errors():
+    """Check for OpenGL errors and print them."""
+    error = glGetError()
+    while error != GL_NO_ERROR:
+        error_message = {
+            GL_INVALID_ENUM: "GL_INVALID_ENUM",
+            GL_INVALID_VALUE: "GL_INVALID_VALUE",
+            GL_INVALID_OPERATION: "GL_INVALID_OPERATION",
+            GL_STACK_OVERFLOW: "GL_STACK_OVERFLOW",
+            GL_STACK_UNDERFLOW: "GL_STACK_UNDERFLOW",
+            GL_OUT_OF_MEMORY: "GL_OUT_OF_MEMORY"
+        }.get(error, f"Unknown error code: {error}")
+        print(f"OpenGL Error: {error_message}")
+        error = glGetError()
 
 def compile_shader(source, shader_type):
     """
@@ -92,24 +87,16 @@ def compile_shader(source, shader_type):
     shader = glCreateShader(shader_type)
     glShaderSource(shader, source)
     glCompileShader(shader)
-
     # Check for compilation errors
-    compile_success = glGetShaderiv(shader, GL_COMPILE_STATUS)
-    if not compile_success:
+    if glGetShaderiv(shader, GL_COMPILE_STATUS) != GL_TRUE:
         error = glGetShaderInfoLog(shader).decode()
         shader_type_name = "Vertex" if shader_type == GL_VERTEX_SHADER else "Fragment"
-        print(f"{shader_type_name} shader compilation error: {error}")
-        raise RuntimeError(f"{shader_type_name} shader compilation error")
-
+        raise RuntimeError(f"{shader_type_name} shader compilation error: {error}")
     return shader
 
-def create_shader_program(vertex_source, fragment_source):
+def create_shader_program():
     """
-    Creates and links a shader program.
-
-    Parameters:
-    - vertex_source (str): Vertex shader source code.
-    - fragment_source (str): Fragment shader source code.
+    Creates and links the shader program.
 
     Returns:
     - int: The linked shader program ID.
@@ -117,30 +104,22 @@ def create_shader_program(vertex_source, fragment_source):
     Raises:
     - RuntimeError: If shader linking fails.
     """
-    vertex_shader = compile_shader(vertex_source, GL_VERTEX_SHADER)
-    fragment_shader = compile_shader(fragment_source, GL_FRAGMENT_SHADER)
-
+    vertex_shader = compile_shader(vertex_shader_source, GL_VERTEX_SHADER)
+    fragment_shader = compile_shader(fragment_shader_source, GL_FRAGMENT_SHADER)
     shader_program = glCreateProgram()
     glAttachShader(shader_program, vertex_shader)
     glAttachShader(shader_program, fragment_shader)
+    glBindAttribLocation(shader_program, 0, 'position')
+    glBindAttribLocation(shader_program, 1, 'color')
     glLinkProgram(shader_program)
-
     # Check for linking errors
-    link_success = glGetProgramiv(shader_program, GL_LINK_STATUS)
-    if not link_success:
+    if glGetProgramiv(shader_program, GL_LINK_STATUS) != GL_TRUE:
         error = glGetProgramInfoLog(shader_program).decode()
-        print(f"Shader program linking error: {error}")
-        raise RuntimeError("Shader program linking error")
-
-    # Shaders can be deleted after linking
+        raise RuntimeError(f"Shader program linking error: {error}")
+    # Cleanup shaders as they're no longer needed after linking
     glDeleteShader(vertex_shader)
     glDeleteShader(fragment_shader)
-
     return shader_program
-
-# ------------------------------------------
-# OpenGL Initialization Function
-# ------------------------------------------
 
 def init_opengl(width, height):
     """
@@ -158,24 +137,219 @@ def init_opengl(width, height):
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
     glPointSize(2.0)
     glLineWidth(1.0)
-    glDisable(GL_DEPTH_TEST)
+    glEnable(GL_POINT_SMOOTH)
+    glEnable(GL_LINE_SMOOTH)
+    check_gl_errors()
 
-# ------------------------------------------
-# Renderer Class for Handling OpenGL Rendering
-# ------------------------------------------
+def gl_color(color, alpha=1.0):
+    """
+    Converts Pygame color (0-255) to OpenGL color (0.0-1.0).
+
+    Parameters:
+    - color (tuple): RGB color tuple.
+    - alpha (float): Alpha value.
+
+    Returns:
+    - tuple: RGBA color tuple with normalized values.
+    """
+    return (color[0]/255.0, color[1]/255.0, color[2]/255.0, alpha)
+
+def cleanup_textures(renderer):
+    """
+    Deletes all textures stored in the text texture cache.
+
+    Parameters:
+    - renderer (Renderer): The renderer instance.
+
+    Returns:
+    - None
+    """
+    global text_texture_cache
+    if renderer.text_texture_cache:
+        texture_ids = [item[0] for item in renderer.text_texture_cache.values()]
+        glDeleteTextures(texture_ids)
+        renderer.text_texture_cache.clear()
+
+class DialogManager:
+    def __init__(self, font, big_font, screen_width, screen_height, renderer):
+        self.font = font  # Pygame font for regular text
+        self.big_font = big_font  # Pygame font for larger text
+        self.screen_width = screen_width
+        self.screen_height = screen_height
+        self.renderer = renderer
+
+    def draw_save_dialog(self, grid, save_filename):
+        """
+        Draws the Save Circuit dialog using OpenGL.
+
+        Parameters:
+        - grid (Grid): The Grid object for coordinate transformations.
+        - save_filename (str): The current filename in the input box.
+
+        Returns:
+        - None
+        """
+        # Define dialog area
+        dialog_width = 300
+        dialog_height = 100
+        dialog_x = 20
+        dialog_y = self.screen_height - dialog_height - 20
+
+        # Prepare rectangles and colors
+        rects = []
+        colors = []
+
+        # Dialog background
+        rects.append((dialog_x, dialog_y, dialog_width, dialog_height))
+        colors.append(DARK_GREY)
+
+        # Save button
+        button_width = 70
+        button_height = 30
+        button_x = dialog_x + 220
+        button_y = dialog_y + 50
+
+        rects.append((button_x, button_y, button_width, button_height))
+        colors.append(GREY)
+
+        # Draw filled rectangles
+        self.renderer.add_rectangles(rects, colors)
+
+        # Draw borders
+        self.renderer.draw_outlined_rect(dialog_x, dialog_y, dialog_width, dialog_height, WHITE, line_width=2)
+        self.renderer.draw_outlined_rect(dialog_x + 10, dialog_y + 50, 200, 30, WHITE, line_width=2)
+        self.renderer.draw_outlined_rect(button_x, button_y, button_width, button_height, WHITE, line_width=2)
+
+        # Draw texts
+        # Label text
+        label_text = "Save Circuit"
+        texture_id, text_width, text_height = self.renderer.load_text_texture(label_text, self.big_font, WHITE)
+        self.renderer.draw_textured_quad(dialog_x + 10, dialog_y + 10, text_width, text_height, texture_id)
+
+        # Input text
+        input_text = save_filename
+        texture_id, text_width, text_height = self.renderer.load_text_texture(input_text, self.font, WHITE)
+        self.renderer.draw_textured_quad(dialog_x + 15, dialog_y + 55, text_width, text_height, texture_id)
+
+        # Button text
+        button_text = "Save"
+        texture_id, text_width, text_height = self.renderer.load_text_texture(button_text, self.font, BLACK)
+        text_x = button_x + (button_width - text_width) / 2
+        text_y = button_y + (button_height - text_height) / 2
+        self.renderer.draw_textured_quad(text_x, text_y, text_width, text_height, texture_id)
+
+    def draw_load_dialog(self, grid, load_files, load_scroll_offset, load_selection_index):
+        """
+        Draws the Load Circuit dialog using OpenGL.
+
+        Parameters:
+        - grid (Grid): The Grid object for coordinate transformations.
+        - load_files (list): List of filenames available for loading.
+        - load_scroll_offset (int): Current scroll offset for the file list.
+        - load_selection_index (int): Currently selected file index.
+
+        Returns:
+        - None
+        """
+        # Define dialog area
+        dialog_width = self.screen_width - 40
+        dialog_height = self.screen_height - 60
+        dialog_x = 20
+        dialog_y = 20
+
+        # Prepare rectangles and colors
+        rects = []
+        colors = []
+
+        # Dialog background
+        rects.append((dialog_x, dialog_y, dialog_width, dialog_height))
+        colors.append(DARK_GREY)
+
+        # File list entries
+        list_x = dialog_x + 10
+        list_y = dialog_y + 50
+        item_height = 30
+        max_visible = int((dialog_height - 70) / item_height)
+        visible_files = load_files[load_scroll_offset:load_scroll_offset + max_visible]
+
+        for index, file in enumerate(visible_files):
+            actual_index = index + load_scroll_offset
+            file_rect_x = list_x
+            file_rect_y = list_y + index * item_height
+            file_rect_width = dialog_width - 20
+            file_rect_height = item_height
+
+            if actual_index == load_selection_index:
+                color = LIGHTER_GREY
+            else:
+                color = DARK_GREY
+
+            rects.append((file_rect_x, file_rect_y, file_rect_width, file_rect_height))
+            colors.append(color)
+
+            # File entry border
+            self.renderer.draw_outlined_rect(file_rect_x, file_rect_y, file_rect_width, file_rect_height, WHITE, line_width=1)
+
+            # File name text
+            file_text = file
+            texture_id, text_width, text_height = self.renderer.load_text_texture(file_text, self.font, WHITE)
+            self.renderer.draw_textured_quad(file_rect_x + 5, file_rect_y + 5, text_width, text_height, texture_id)
+
+        # Load button
+        button_width = 100
+        button_height = 40
+        button_x = dialog_x + dialog_width - button_width - 20
+        button_y = dialog_y + dialog_height - button_height - 20
+
+        rects.append((button_x, button_y, button_width, button_height))
+        colors.append(GREY)
+
+        # Draw filled rectangles
+        self.renderer.add_rectangles(rects, colors)
+
+        # Draw borders
+        self.renderer.draw_outlined_rect(dialog_x, dialog_y, dialog_width, dialog_height, WHITE, line_width=2)
+        self.renderer.draw_outlined_rect(button_x, button_y, button_width, button_height, WHITE, line_width=2)
+
+        # Draw label text
+        label_text = "Load Circuit"
+        texture_id, text_width, text_height = self.renderer.load_text_texture(label_text, self.big_font, WHITE)
+        self.renderer.draw_textured_quad(dialog_x + 10, dialog_y + 10, text_width, text_height, texture_id)
+
+        # Draw button text
+        button_text = "Load"
+        texture_id, text_width, text_height = self.renderer.load_text_texture(button_text, self.font, BLACK)
+        text_x = button_x + (button_width - text_width) / 2
+        text_y = button_y + (button_height - text_height) / 2
+        self.renderer.draw_textured_quad(text_x, text_y, text_width, text_height, texture_id)
+
+    def draw_dialogs(self, grid, save_dialog_active, load_dialog_active,
+                     save_filename="", load_files=[], load_scroll_offset=0, load_selection_index=-1):
+        """
+        Draws active dialogs based on the current state.
+
+        Parameters:
+        - grid (Grid): The Grid object for coordinate transformations.
+        - save_dialog_active (bool): Whether the save dialog is active.
+        - load_dialog_active (bool): Whether the load dialog is active.
+        - save_filename (str): Current filename in the save input box.
+        - load_files (list): List of filenames available for loading.
+        - load_scroll_offset (int): Current scroll offset for the load file list.
+        - load_selection_index (int): Currently selected file index.
+
+        Returns:
+        - None
+        """
+        if save_dialog_active:
+            self.draw_save_dialog(grid, save_filename)
+        if load_dialog_active:
+            self.draw_load_dialog(grid, load_files, load_scroll_offset, load_selection_index)
 
 class Renderer:
     def __init__(self, screen_width, screen_height):
-        """
-        Initializes the Renderer by setting up shaders, buffers, and projection.
-
-        Parameters:
-        - screen_width (int): Width of the display window.
-        - screen_height (int): Height of the display window.
-        """
         # Initialize fonts
         pygame.font.init()
-        self.font = pygame.font.SysFont(None, 24)      # Regular font
+        self.font = pygame.font.SysFont(None, 24)  # Regular font
         self.big_font = pygame.font.SysFont(None, 36)  # Larger font
 
         # Initialize OpenGL
@@ -183,71 +357,58 @@ class Renderer:
         self.screen_width = screen_width
         self.screen_height = screen_height
 
-        # Create shader programs
-        self.colored_shader = create_shader_program(vertex_shader_colored_source, fragment_shader_colored_source)
-        self.textured_shader = create_shader_program(vertex_shader_textured_source, fragment_shader_textured_source)
+        # Create shader program
+        self.shader_program = create_shader_program()
+        self.projection_loc = glGetUniformLocation(self.shader_program, 'projection')
 
-        # Get uniform locations
-        self.colored_projection_loc = glGetUniformLocation(self.colored_shader, 'projection')
-        self.textured_projection_loc = glGetUniformLocation(self.textured_shader, 'projection')
-        self.textured_sampler_loc = glGetUniformLocation(self.textured_shader, 'textTexture')
+        # Create texture shader program
+        self.texture_shader_program = self.create_texture_shader_program()
+        self.texture_projection_loc = glGetUniformLocation(self.texture_shader_program, 'projection')
 
-        # Create projection matrix (orthographic)
+        # Create projection matrix
         self.projection_matrix = self.create_orthographic_matrix(0, screen_width, screen_height, 0, -1, 1)
 
-        # --------------------------
-        # Setup for Colored Rendering
-        # --------------------------
+        # Prepare buffers for triangles
+        self.max_vertices = 1000000  # Adjust as needed
+        self.triangle_vertex_data = np.zeros(self.max_vertices, dtype=[('position', np.float32, 2), ('color', np.float32, 4)])
+        self.triangle_vertex_count = 0
 
-        # Prepare buffers for colored triangles (e.g., wires, nodes, transistors, clocks, filled rectangles)
-        self.max_colored_vertices = 1000000  # Adjust as needed
-        self.colored_vertex_data = np.zeros(self.max_colored_vertices, dtype=[('position', np.float32, 2), ('color', np.float32, 4)])
-        self.colored_vertex_count = 0
+        # Create VAO and VBO for triangles
+        self.triangle_vao = glGenVertexArrays(1)
+        self.triangle_vbo = glGenBuffers(1)
 
-        # Create VAO and VBO for colored rendering
-        self.colored_vao = glGenVertexArrays(1)
-        self.colored_vbo = glGenBuffers(1)
-
-        glBindVertexArray(self.colored_vao)
-        glBindBuffer(GL_ARRAY_BUFFER, self.colored_vbo)
-        glBufferData(GL_ARRAY_BUFFER, self.colored_vertex_data.nbytes, None, GL_DYNAMIC_DRAW)
+        # Initialize VAO and VBO for triangles
+        glBindVertexArray(self.triangle_vao)
+        glBindBuffer(GL_ARRAY_BUFFER, self.triangle_vbo)
+        glBufferData(GL_ARRAY_BUFFER, self.triangle_vertex_data.nbytes, None, GL_DYNAMIC_DRAW)
 
         # Set up vertex attribute pointers
-        stride = self.colored_vertex_data.strides[0]
+        stride = self.triangle_vertex_data.strides[0]
         offset = ctypes.c_void_p(0)
 
         # Position attribute
         glEnableVertexAttribArray(0)
-        glVertexAttribPointer(
-            0, 2, GL_FLOAT, GL_FALSE,
-            stride, offset
-        )
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, stride, offset)
 
-        # Color attribute - Fixing the color offset
-        color_offset = ctypes.c_void_p(self.colored_vertex_data.dtype.fields['color'][1])
+        # Color attribute
+        offset = ctypes.c_void_p(self.triangle_vertex_data.dtype.fields['color'][1])
         glEnableVertexAttribArray(1)
-        glVertexAttribPointer(
-            1, 4, GL_FLOAT, GL_FALSE,
-            stride, color_offset
-        )
+        glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, stride, offset)
 
         glBindVertexArray(0)
 
-        # ----------------------------
-        # Setup for Points Rendering
-        # ----------------------------
-
-        # Prepare buffers for points (e.g., grid points)
-        self.max_point_vertices = 1000000  # Adjust as needed
-        self.point_vertex_data = np.zeros(self.max_point_vertices, dtype=[('position', np.float32, 2), ('color', np.float32, 4)])
+        # Prepare buffers for points
+        self.max_points = 1000000
+        self.point_vertex_data = np.zeros(self.max_points, dtype=[('position', np.float32, 2), ('color', np.float32, 4)])
         self.point_vertex_count = 0
 
         # Create VAO and VBO for points
-        self.points_vao = glGenVertexArrays(1)
-        self.points_vbo = glGenBuffers(1)
+        self.point_vao = glGenVertexArrays(1)
+        self.point_vbo = glGenBuffers(1)
 
-        glBindVertexArray(self.points_vao)
-        glBindBuffer(GL_ARRAY_BUFFER, self.points_vbo)
+        # Initialize VAO and VBO for points
+        glBindVertexArray(self.point_vao)
+        glBindBuffer(GL_ARRAY_BUFFER, self.point_vbo)
         glBufferData(GL_ARRAY_BUFFER, self.point_vertex_data.nbytes, None, GL_DYNAMIC_DRAW)
 
         # Set up vertex attribute pointers
@@ -256,56 +417,63 @@ class Renderer:
 
         # Position attribute
         glEnableVertexAttribArray(0)
-        glVertexAttribPointer(
-            0, 2, GL_FLOAT, GL_FALSE,
-            stride, offset
-        )
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, stride, offset)
 
         # Color attribute
-        color_offset = ctypes.c_void_p(self.point_vertex_data.dtype.fields['color'][1])
+        offset = ctypes.c_void_p(self.point_vertex_data.dtype.fields['color'][1])
         glEnableVertexAttribArray(1)
-        glVertexAttribPointer(
-            1, 4, GL_FLOAT, GL_FALSE,
-            stride, color_offset
-        )
+        glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, stride, offset)
 
         glBindVertexArray(0)
 
-        # ----------------------------
-        # Setup for Textured Rendering
-        # ----------------------------
+        # Prepare buffers for lines
+        self.line_vertex_data = np.zeros(self.max_vertices, dtype=[('position', np.float32, 2), ('color', np.float32, 4)])
+        self.line_vertex_count = 0
 
-        # Prepare buffers for textured quads (e.g., text in dialogs)
-        self.max_textured_vertices = 1000000  # Adjust as needed
-        self.textured_vertex_data = np.zeros(self.max_textured_vertices, dtype=[('position', np.float32, 2), ('texCoord', np.float32, 2)])
-        self.textured_vertex_count = 0
+        # Create VAO and VBO for lines
+        self.line_vao = glGenVertexArrays(1)
+        self.line_vbo = glGenBuffers(1)
 
-        # Create VAO and VBO for textured rendering
-        self.textured_vao = glGenVertexArrays(1)
-        self.textured_vbo = glGenBuffers(1)
-
-        glBindVertexArray(self.textured_vao)
-        glBindBuffer(GL_ARRAY_BUFFER, self.textured_vbo)
-        glBufferData(GL_ARRAY_BUFFER, self.textured_vertex_data.nbytes, None, GL_DYNAMIC_DRAW)
+        # Initialize VAO and VBO for lines
+        glBindVertexArray(self.line_vao)
+        glBindBuffer(GL_ARRAY_BUFFER, self.line_vbo)
+        glBufferData(GL_ARRAY_BUFFER, self.line_vertex_data.nbytes, None, GL_DYNAMIC_DRAW)
 
         # Set up vertex attribute pointers
-        stride = self.textured_vertex_data.strides[0]
+        stride = self.line_vertex_data.strides[0]
         offset = ctypes.c_void_p(0)
 
         # Position attribute
         glEnableVertexAttribArray(0)
-        glVertexAttribPointer(
-            0, 2, GL_FLOAT, GL_FALSE,
-            stride, offset
-        )
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, stride, offset)
+
+        # Color attribute
+        offset = ctypes.c_void_p(self.line_vertex_data.dtype.fields['color'][1])
+        glEnableVertexAttribArray(1)
+        glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, stride, offset)
+
+        glBindVertexArray(0)
+
+        # Initialize VAO and VBO for textured quads
+        self.textured_quad_vao = glGenVertexArrays(1)
+        self.textured_quad_vbo = glGenBuffers(1)
+
+        glBindVertexArray(self.textured_quad_vao)
+        glBindBuffer(GL_ARRAY_BUFFER, self.textured_quad_vbo)
+        glBufferData(GL_ARRAY_BUFFER, 4 * 4 * ctypes.sizeof(ctypes.c_float), None, GL_DYNAMIC_DRAW)  # 4 vertices, each with position and texCoord
+
+        # Set up vertex attribute pointers
+        stride = 4 * ctypes.sizeof(ctypes.c_float)  # 2 position floats + 2 texCoord floats
+        offset = ctypes.c_void_p(0)
+
+        # Position attribute
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, stride, offset)
 
         # TexCoord attribute
-        tex_offset = ctypes.c_void_p(self.textured_vertex_data.dtype.fields['texCoord'][1])
+        offset = ctypes.c_void_p(2 * ctypes.sizeof(ctypes.c_float))
         glEnableVertexAttribArray(1)
-        glVertexAttribPointer(
-            1, 2, GL_FLOAT, GL_FALSE,
-            stride, tex_offset
-        )
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, stride, offset)
 
         glBindVertexArray(0)
 
@@ -315,103 +483,82 @@ class Renderer:
         # Texture handling for text rendering
         self.text_texture_cache = {}
 
+        # Default line width
+        self.line_width = 1.0
+
+        check_gl_errors()
+
+    def create_texture_shader_program(self):
+        vertex_shader = compile_shader(texture_vertex_shader_source, GL_VERTEX_SHADER)
+        fragment_shader = compile_shader(texture_fragment_shader_source, GL_FRAGMENT_SHADER)
+        shader_program = glCreateProgram()
+        glAttachShader(shader_program, vertex_shader)
+        glAttachShader(shader_program, fragment_shader)
+        glBindAttribLocation(shader_program, 0, 'position')
+        glBindAttribLocation(shader_program, 1, 'texCoord')
+        glLinkProgram(shader_program)
+        # Check for linking errors
+        if glGetProgramiv(shader_program, GL_LINK_STATUS) != GL_TRUE:
+            error = glGetProgramInfoLog(shader_program).decode()
+            raise RuntimeError(f"Texture shader program linking error: {error}")
+        # Cleanup shaders as they're no longer needed after linking
+        glDeleteShader(vertex_shader)
+        glDeleteShader(fragment_shader)
+        return shader_program
+
     def create_orthographic_matrix(self, left, right, bottom, top, near, far):
         """
         Creates an orthographic projection matrix.
-
-        Parameters:
-        - left, right, bottom, top, near, far (float): Boundaries of the orthographic projection.
-
-        Returns:
-        - numpy.ndarray: A 4x4 orthographic projection matrix.
         """
         matrix = np.zeros((4, 4), dtype=np.float32)
-        matrix[0][0] = 2.0 / (right - left)
-        matrix[1][1] = 2.0 / (top - bottom)
-        matrix[2][2] = -2.0 / (far - near)
-        matrix[3][3] = 1.0
+        matrix[0][0] = 2 / (right - left)
+        matrix[1][1] = 2 / (top - bottom)
+        matrix[2][2] = -2 / (far - near)
+        matrix[3][3] = 1
         matrix[3][0] = -(right + left) / (right - left)
         matrix[3][1] = -(top + bottom) / (top - bottom)
         matrix[3][2] = -(far + near) / (far - near)
+        check_gl_errors()
         return matrix
 
-    # -------------------------
-    # Colored Rendering Methods
-    # -------------------------
+    def begin(self):
+        """
+        Prepares for rendering by resetting the vertex counts.
+        """
+        self.triangle_vertex_count = 0
+        self.point_vertex_count = 0
+        self.line_vertex_count = 0
 
-    def begin_colored_batch(self):
+    def add_vertices(self, positions, colors):
         """
-        Prepares the colored batch for rendering by resetting the vertex count.
-        """
-        self.colored_vertex_count = 0
-
-    def add_colored_vertices(self, positions, colors):
-        """
-        Adds vertices to the colored triangle batch.
+        Adds vertices to the triangle batch.
 
         Parameters:
         - positions (numpy.ndarray): Array of shape (N, 2) containing vertex positions.
-        - colors (numpy.ndarray): Array of shape (N, 4) containing vertex colors in 0-255 range.
+        - colors (numpy.ndarray): Array of shape (N, 4) containing vertex colors.
 
         Returns:
         - None
         """
         num_vertices = len(positions)
-        if self.colored_vertex_count + num_vertices > self.max_colored_vertices:
-            self.end_colored_batch()
-            self.begin_colored_batch()
-            if num_vertices > self.max_colored_vertices:
-                raise ValueError("Too many colored vertices to batch.")
-
-        # Debug: Print first few color values
-        if self.colored_vertex_count == 0 and num_vertices > 0:
-            print("Adding colored vertices with colors:")
-            print(colors[:min(5, num_vertices)])
-
-        # Normalize colors
-        normalized_colors = colors / 255.0  # Assuming colors are in 0-255 range
+        if self.triangle_vertex_count + num_vertices > self.max_vertices:
+            self.end()
+            self.begin()
+            if num_vertices > self.max_vertices:
+                raise ValueError("Too many vertices to batch.")
 
         # Ensure colors have exactly 4 components
-        if normalized_colors.shape[1] != 4:
-            raise ValueError(f"Colors array must have 4 components per vertex, got {normalized_colors.shape[1]}.")
+        if colors.shape[1] != 4:
+            raise ValueError(f"Colors array must have 4 components per vertex, got {colors.shape[1]}.")
 
-        # Add positions and colors to the buffer
-        self.colored_vertex_data['position'][self.colored_vertex_count:self.colored_vertex_count + num_vertices] = positions
-        self.colored_vertex_data['color'][self.colored_vertex_count:self.colored_vertex_count + num_vertices] = normalized_colors
-        self.colored_vertex_count += num_vertices
-
-    def end_colored_batch(self):
-        """
-        Finalizes the colored batch by uploading vertex data and issuing the draw call.
-        """
-        if self.colored_vertex_count == 0:
-            return  # Nothing to draw
-
-        glUseProgram(self.colored_shader)
-        glUniformMatrix4fv(self.colored_projection_loc, 1, GL_FALSE, self.projection_matrix)
-
-        glBindVertexArray(self.colored_vao)
-        glBindBuffer(GL_ARRAY_BUFFER, self.colored_vbo)
-        glBufferSubData(GL_ARRAY_BUFFER, 0, self.colored_vertex_count * self.colored_vertex_data.dtype.itemsize,
-                        self.colored_vertex_data[:self.colored_vertex_count])
-        glDrawArrays(GL_TRIANGLES, 0, self.colored_vertex_count)
-        glBindVertexArray(0)
-
-        glUseProgram(0)
-
-    # ------------------------
-    # Points Rendering Methods
-    # ------------------------
-
-    def begin_points_batch(self):
-        """
-        Prepares the points batch for rendering by resetting the vertex count.
-        """
-        self.point_vertex_count = 0
+        self.triangle_vertex_data['position'][self.triangle_vertex_count:self.triangle_vertex_count + num_vertices] = positions
+        self.triangle_vertex_data['color'][self.triangle_vertex_count:self.triangle_vertex_count + num_vertices] = colors
+        self.triangle_vertex_count += num_vertices
+        check_gl_errors()
 
     def add_points(self, positions, colors):
         """
-        Adds points to the points batch.
+        Adds points to the point batch.
 
         Parameters:
         - positions (numpy.ndarray): Array of shape (N, 2) containing point positions.
@@ -421,130 +568,112 @@ class Renderer:
         - None
         """
         num_points = len(positions)
-        if self.point_vertex_count + num_points > self.max_point_vertices:
-            self.end_points_batch()
-            self.begin_points_batch()
-            if num_points > self.max_point_vertices:
+        if self.point_vertex_count + num_points > self.max_points:
+            self.end()
+            self.begin()
+            if num_points > self.max_points:
                 raise ValueError("Too many points to batch.")
 
-        # Normalize colors
-        normalized_colors = colors / 255.0  # Assuming colors are in 0-255 range
-
         # Ensure colors have exactly 4 components
-        if normalized_colors.shape[1] != 4:
-            raise ValueError(f"Colors array must have 4 components per point, got {normalized_colors.shape[1]}.")
+        if colors.shape[1] != 4:
+            raise ValueError(f"Colors array must have 4 components per point, got {colors.shape[1]}.")
 
-        # Add positions and colors to the buffer
         self.point_vertex_data['position'][self.point_vertex_count:self.point_vertex_count + num_points] = positions
-        self.point_vertex_data['color'][self.point_vertex_count:self.point_vertex_count + num_points] = normalized_colors
+        self.point_vertex_data['color'][self.point_vertex_count:self.point_vertex_count + num_points] = colors
         self.point_vertex_count += num_points
+        check_gl_errors()
 
-    def end_points_batch(self):
+    def add_lines(self, positions, colors):
         """
-        Finalizes the points batch by uploading vertex data and issuing the draw call.
-        """
-        if self.point_vertex_count == 0:
-            return  # Nothing to draw
-
-        glUseProgram(self.colored_shader)
-        glUniformMatrix4fv(self.colored_projection_loc, 1, GL_FALSE, self.projection_matrix)
-
-        glBindVertexArray(self.points_vao)
-        glBindBuffer(GL_ARRAY_BUFFER, self.points_vbo)
-        glBufferSubData(GL_ARRAY_BUFFER, 0, self.point_vertex_count * self.point_vertex_data.dtype.itemsize,
-                        self.point_vertex_data[:self.point_vertex_count])
-        glDrawArrays(GL_POINTS, 0, self.point_vertex_count)
-        glBindVertexArray(0)
-
-        glUseProgram(0)
-
-    # --------------------------
-    # Textured Rendering Methods
-    # --------------------------
-
-    def begin_textured_batch(self):
-        """
-        Prepares the textured batch for rendering by resetting the vertex count.
-        """
-        self.textured_vertex_count = 0
-
-    def add_textured_quad(self, x, y, width, height, texture_id):
-        """
-        Adds a textured quad to the textured batch.
+        Adds lines to the line batch.
 
         Parameters:
-        - x (float): Top-left X coordinate.
-        - y (float): Top-left Y coordinate.
-        - width (float): Width of the quad.
-        - height (float): Height of the quad.
-        - texture_id (int): OpenGL texture ID to bind.
+        - positions (numpy.ndarray): Array of shape (N, 2) containing line vertex positions.
+        - colors (numpy.ndarray): Array of shape (N, 4) containing vertex colors.
 
         Returns:
         - None
         """
-        # Define the quad as two triangles with texture coordinates
-        vertices = [
-            [x, y],
-            [x + width, y],
-            [x + width, y + height],
-            [x + width, y + height],
-            [x, y + height],
-            [x, y],
-        ]
-        tex_coords = [
-            [0.0, 0.0],
-            [1.0, 0.0],
-            [1.0, 1.0],
-            [1.0, 1.0],
-            [0.0, 1.0],
-            [0.0, 0.0],
-        ]
-
-        positions = np.array(vertices, dtype=np.float32)
-        tex_coords = np.array(tex_coords, dtype=np.float32)
-
         num_vertices = len(positions)
-        if self.textured_vertex_count + num_vertices > self.max_textured_vertices:
-            self.end_textured_batch()
-            self.begin_textured_batch()
-            if num_vertices > self.max_textured_vertices:
-                raise ValueError("Too many textured vertices to batch.")
+        if self.line_vertex_count + num_vertices > self.max_vertices:
+            self.end()
+            self.begin()
+            if num_vertices > self.max_vertices:
+                raise ValueError("Too many vertices to batch.")
 
-        # Add positions and texture coordinates to the buffer
-        self.textured_vertex_data['position'][self.textured_vertex_count:self.textured_vertex_count + num_vertices] = positions
-        self.textured_vertex_data['texCoord'][self.textured_vertex_count:self.textured_vertex_count + num_vertices] = tex_coords
-        self.textured_vertex_count += num_vertices
+        # Ensure colors have exactly 4 components
+        if colors.shape[1] != 4:
+            raise ValueError(f"Colors array must have 4 components per vertex, got {colors.shape[1]}.")
 
-        # Bind texture
-        glBindTexture(GL_TEXTURE_2D, texture_id)
+        self.line_vertex_data['position'][self.line_vertex_count:self.line_vertex_count + num_vertices] = positions
+        self.line_vertex_data['color'][self.line_vertex_count:self.line_vertex_count + num_vertices] = colors
+        self.line_vertex_count += num_vertices
+        check_gl_errors()
 
-    def end_textured_batch(self):
+    def add_rectangles(self, rects, colors):
         """
-        Finalizes the textured batch by uploading vertex data and issuing the draw call.
+        Adds multiple filled rectangles to the triangle batch.
+
+        Parameters:
+        - rects (list): List of rectangles, each defined as (x, y, width, height).
+        - colors (list): List of colors corresponding to each rectangle.
+
+        Returns:
+        - None
         """
-        if self.textured_vertex_count == 0:
-            return  # Nothing to draw
+        for rect, color in zip(rects, colors):
+            x, y, width, height = rect
+            vertices = [
+                [x, y],
+                [x + width, y],
+                [x + width, y + height],
 
-        glUseProgram(self.textured_shader)
-        glUniformMatrix4fv(self.textured_projection_loc, 1, GL_FALSE, self.projection_matrix)
-        glUniform1i(self.textured_sampler_loc, 0)  # Texture unit 0
+                [x + width, y + height],
+                [x, y + height],
+                [x, y],
+            ]
+            positions = np.array(vertices, dtype=np.float32)
+            # Normalize color components
+            color_rgba = [c / 255.0 for c in color[:3]] + [color[3] / 255.0 if len(color) > 3 else 1.0]
+            colors_array = np.array([color_rgba] * 6, dtype=np.float32)
 
-        glActiveTexture(GL_TEXTURE0)
-        # Assuming that each textured quad binds its own texture before adding vertices
-        # Hence, textures are already bound correctly
+            self.add_vertices(positions, colors_array)
+        check_gl_errors()
 
-        glBindVertexArray(self.textured_vao)
-        glBindBuffer(GL_ARRAY_BUFFER, self.textured_vbo)
-        glBufferSubData(GL_ARRAY_BUFFER, 0, self.textured_vertex_count * self.textured_vertex_data.dtype.itemsize,
-                        self.textured_vertex_data[:self.textured_vertex_count])
-        glDrawArrays(GL_TRIANGLES, 0, self.textured_vertex_count)
-        glBindVertexArray(0)
+    def end(self):
+        """
+        Finalizes rendering by uploading vertex data and issuing the draw calls.
+        """
+        glUseProgram(self.shader_program)
+        glUniformMatrix4fv(self.projection_loc, 1, GL_FALSE, self.projection_matrix)
+
+        # Draw triangles
+        if self.triangle_vertex_count > 0:
+            glBindVertexArray(self.triangle_vao)
+            glBindBuffer(GL_ARRAY_BUFFER, self.triangle_vbo)
+            glBufferSubData(GL_ARRAY_BUFFER, 0, self.triangle_vertex_count * self.triangle_vertex_data.dtype.itemsize, self.triangle_vertex_data[:self.triangle_vertex_count])
+            glDrawArrays(GL_TRIANGLES, 0, self.triangle_vertex_count)
+            glBindVertexArray(0)
+
+        # Draw points
+        if self.point_vertex_count > 0:
+            glBindVertexArray(self.point_vao)
+            glBindBuffer(GL_ARRAY_BUFFER, self.point_vbo)
+            glBufferSubData(GL_ARRAY_BUFFER, 0, self.point_vertex_count * self.point_vertex_data.dtype.itemsize, self.point_vertex_data[:self.point_vertex_count])
+            glDrawArrays(GL_POINTS, 0, self.point_vertex_count)
+            glBindVertexArray(0)
+
+        # Draw lines
+        if self.line_vertex_count > 0:
+            glLineWidth(self.line_width)
+            glBindVertexArray(self.line_vao)
+            glBindBuffer(GL_ARRAY_BUFFER, self.line_vbo)
+            glBufferSubData(GL_ARRAY_BUFFER, 0, self.line_vertex_count * self.line_vertex_data.dtype.itemsize, self.line_vertex_data[:self.line_vertex_count])
+            glDrawArrays(GL_LINES, 0, self.line_vertex_count)
+            glBindVertexArray(0)
 
         glUseProgram(0)
-
-    # -------------------
-    # Text Rendering Method
-    # -------------------
+        check_gl_errors()
 
     def load_text_texture(self, text, font, color):
         """
@@ -564,7 +693,8 @@ class Renderer:
 
         # Render the text to a Pygame surface
         text_surface = font.render(text, True, color[:3], color[3] if len(color) > 3 else None)
-        text_data = pygame.image.tostring(text_surface, "RGBA", True)
+        # **Disable vertical flipping by setting flipped=False**
+        text_data = pygame.image.tostring(text_surface, "RGBA", False)  # Changed from True to False
         width, height = text_surface.get_size()
 
         # Generate a texture ID
@@ -584,9 +714,87 @@ class Renderer:
         self.text_texture_cache[cache_key] = (texture_id, width, height)
         return self.text_texture_cache[cache_key]
 
-    # -------------------
-    # Main Draw Method
-    # -------------------
+    def draw_textured_quad(self, x, y, width, height, texture_id):
+        """
+        Draws a textured quad at the specified position using modern OpenGL.
+
+        Parameters:
+        - x (float): Top-left X coordinate.
+        - y (float): Top-left Y coordinate.
+        - width (float): Width of the quad.
+        - height (float): Height of the quad.
+        - texture_id (int): OpenGL texture ID.
+
+        Returns:
+        - None
+        """
+        # Vertex data: position and texCoord
+        vertices = [
+            # Position       # TexCoord
+            [x, y,            0.0, 0.0],
+            [x + width, y,    1.0, 0.0],
+            [x + width, y + height, 1.0, 1.0],
+            [x, y + height,   0.0, 1.0],
+        ]
+        vertices = np.array(vertices, dtype=np.float32)
+
+        # Bind the texture shader program
+        glUseProgram(self.texture_shader_program)
+        glUniformMatrix4fv(self.texture_projection_loc, 1, GL_FALSE, self.projection_matrix)
+
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, texture_id)
+        glUniform1i(glGetUniformLocation(self.texture_shader_program, 'textTexture'), 0)
+
+        glBindVertexArray(self.textured_quad_vao)
+        glBindBuffer(GL_ARRAY_BUFFER, self.textured_quad_vbo)
+        glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.nbytes, vertices)
+
+        glDrawArrays(GL_TRIANGLE_FAN, 0, 4)
+
+        glBindVertexArray(0)
+        glBindTexture(GL_TEXTURE_2D, 0)
+        glUseProgram(0)
+        check_gl_errors()
+
+    def draw_outlined_rect(self, x, y, width, height, color, line_width=2):
+        """
+        Draws an outlined rectangle using batched lines.
+
+        Parameters:
+        - x (float): Top-left X coordinate.
+        - y (float): Top-left Y coordinate.
+        - width (float): Width of the rectangle.
+        - height (float): Height of the rectangle.
+        - color (tuple): RGB or RGBA color tuple.
+        - line_width (float): Width of the outline.
+
+        Returns:
+        - None
+        """
+        # Line vertices
+        vertices = [
+            [x, y],
+            [x + width, y],
+
+            [x + width, y],
+            [x + width, y + height],
+
+            [x + width, y + height],
+            [x, y + height],
+
+            [x, y + height],
+            [x, y],
+        ]
+        positions = np.array(vertices, dtype=np.float32)
+        # Normalize color components
+        color_rgba = [c / 255.0 for c in color[:3]] + [color[3] / 255.0 if len(color) > 3 else 1.0]
+        colors_array = np.array([color_rgba] * 8, dtype=np.float32)
+
+        # Set line width
+        self.line_width = line_width
+
+        self.add_lines(positions, colors_array)
 
     def draw(self, grid, circuit, mouse_pos,
              dragging_wire_endpoint=None, is_drawing_wire=False, wire_start_point=None,
@@ -622,10 +830,7 @@ class Renderer:
         glClearColor(0.0, 0.0, 0.0, 1.0)  # Black background
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
-        # -----------------------
-        # Render Colored Elements
-        # -----------------------
-        self.begin_colored_batch()
+        self.begin()
 
         # Draw grid
         grid.draw(self)
@@ -694,7 +899,7 @@ class Renderer:
 
                     positions = np.array(vertices, dtype=np.float32)
 
-                    self.add_colored_vertices(positions, colors_array)
+                    self.add_vertices(positions, colors_array)
 
         # Draw selection box if selecting
         if is_selecting and selection_start and selection_end:
@@ -708,7 +913,7 @@ class Renderer:
             height = abs(screen_y2 - screen_y1)
 
             # Semi-transparent grey rectangle
-            color = [128/255.0, 128/255.0, 128/255.0, 0.4]
+            color = [0.5, 0.5, 0.5, 0.4]
             vertices = [
                 [left, top],
                 [left + width, top],
@@ -721,40 +926,12 @@ class Renderer:
             positions = np.array(vertices, dtype=np.float32)
             colors_array = np.array([color] * 6, dtype=np.float32)
 
-            self.add_colored_vertices(positions, colors_array)
+            self.add_vertices(positions, colors_array)
 
-            # Border using colored vertices (solid GREY)
-            border_color = [GREY[0]/255.0, GREY[1]/255.0, GREY[2]/255.0, GREY[3]/255.0]
-            border_vertices = [
-                [left, top],
-                [left + width, top],
-                [left + width, top + height],
-                [left + width, top + height],
-                [left, top + height],
-                [left, top],
-            ]
-            border_positions = np.array(border_vertices, dtype=np.float32)
-            border_colors = np.array([border_color] * 6, dtype=np.float32)
+            # Border
+            self.draw_outlined_rect(left, top, width, height, GREY, line_width=1)
 
-            self.add_colored_vertices(border_positions, border_colors)
-
-        # End and draw the colored batch
-        self.end_colored_batch()
-
-        # ------------------------
-        # Render Points Elements
-        # ------------------------
-        self.begin_points_batch()
-
-        # Note: If there are any point-based elements besides the grid, add them here.
-
-        # End and draw the points batch
-        self.end_points_batch()
-
-        # --------------------------
-        # Render Textured Elements
-        # --------------------------
-        self.begin_textured_batch()
+        self.end()
 
         # Draw Save and Load Dialogs
         self.dialog_manager.draw_dialogs(
@@ -766,13 +943,11 @@ class Renderer:
             load_scroll_offset,
             load_selection_index
         )
-
-        # End and draw the textured batch
-        self.end_textured_batch()
+        check_gl_errors()
 
     def cleanup(self):
         """
-        Cleans up all cached textures and OpenGL resources to free GPU memory.
+        Cleans up all cached textures to free GPU memory.
 
         Parameters:
         - None
@@ -780,493 +955,15 @@ class Renderer:
         Returns:
         - None
         """
-        # Delete text textures
-        if self.text_texture_cache:
-            texture_ids = [item[0] for item in self.text_texture_cache.values()]
-            glDeleteTextures(texture_ids)
-            self.text_texture_cache.clear()
+        cleanup_textures(self)
+        glDeleteProgram(self.shader_program)
+        glDeleteProgram(self.texture_shader_program)
+        glDeleteBuffers(1, [self.triangle_vbo])
+        glDeleteVertexArrays(1, [self.triangle_vao])
+        glDeleteBuffers(1, [self.point_vbo])
+        glDeleteVertexArrays(1, [self.point_vao])
+        glDeleteBuffers(1, [self.line_vbo])
+        glDeleteVertexArrays(1, [self.line_vao])
+        glDeleteBuffers(1, [self.textured_quad_vbo])
+        glDeleteVertexArrays(1, [self.textured_quad_vao])
 
-        # Delete shader programs
-        glDeleteProgram(self.colored_shader)
-        glDeleteProgram(self.textured_shader)
-
-        # Delete buffers and VAOs for colored rendering
-        glDeleteBuffers(1, [self.colored_vbo])
-        glDeleteVertexArrays(1, [self.colored_vao])
-
-        # Delete buffers and VAOs for points rendering
-        glDeleteBuffers(1, [self.points_vbo])
-        glDeleteVertexArrays(1, [self.points_vao])
-
-        # Delete buffers and VAOs for textured rendering
-        glDeleteBuffers(1, [self.textured_vbo])
-        glDeleteVertexArrays(1, [self.textured_vao])
-
-        print("Cleaned up OpenGL resources.")
-
-# ------------------------------------------
-# DialogManager Class for Handling Dialogs
-# ------------------------------------------
-
-class DialogManager:
-    def __init__(self, font, big_font, screen_width, screen_height, renderer):
-        self.font = font                      # Pygame font for regular text
-        self.big_font = big_font              # Pygame font for larger text
-        self.screen_width = screen_width
-        self.screen_height = screen_height
-        self.renderer = renderer              # Renderer instance
-
-    def draw_save_dialog(self, grid, save_filename):
-        """
-        Draws the Save Circuit dialog using the Renderer.
-
-        Parameters:
-        - grid (Grid): The Grid object for coordinate transformations.
-        - save_filename (str): The current filename in the input box.
-
-        Returns:
-        - None
-        """
-        # Define dialog area
-        dialog_width = 300
-        dialog_height = 100
-        dialog_x = 20
-        dialog_y = self.screen_height - dialog_height - 20
-
-        # Draw dialog background
-        self.renderer.add_colored_vertices(
-            positions=np.array([
-                [dialog_x, dialog_y],
-                [dialog_x + dialog_width, dialog_y],
-                [dialog_x + dialog_width, dialog_y + dialog_height],
-                [dialog_x + dialog_width, dialog_y + dialog_height],
-                [dialog_x, dialog_y + dialog_height],
-                [dialog_x, dialog_y],
-            ], dtype=np.float32),
-            colors=np.array([
-                [c / 255.0 for c in DARK_GREY[:3]] + [DARK_GREY[3] / 255.0] for _ in range(6)
-            ], dtype=np.float32)
-        )
-
-        # Draw borders
-        # Top Border
-        self.renderer.add_colored_vertices(
-            positions=np.array([
-                [dialog_x, dialog_y],
-                [dialog_x + dialog_width, dialog_y],
-                [dialog_x + dialog_width, dialog_y + 2],
-                [dialog_x + dialog_width, dialog_y + 2],
-                [dialog_x, dialog_y + 2],
-                [dialog_x, dialog_y],
-            ], dtype=np.float32),
-            colors=np.array([
-                [c / 255.0 for c in WHITE[:3]] + [WHITE[3] / 255.0] for _ in range(6)
-            ], dtype=np.float32)
-        )
-
-        # Bottom Border
-        self.renderer.add_colored_vertices(
-            positions=np.array([
-                [dialog_x, dialog_y + dialog_height - 2],
-                [dialog_x + dialog_width, dialog_y + dialog_height - 2],
-                [dialog_x + dialog_width, dialog_y + dialog_height],
-                [dialog_x + dialog_width, dialog_y + dialog_height],
-                [dialog_x, dialog_y + dialog_height],
-                [dialog_x, dialog_y + dialog_height - 2],
-            ], dtype=np.float32),
-            colors=np.array([
-                [c / 255.0 for c in WHITE[:3]] + [WHITE[3] / 255.0] for _ in range(6)
-            ], dtype=np.float32)
-        )
-
-        # Left Border
-        self.renderer.add_colored_vertices(
-            positions=np.array([
-                [dialog_x, dialog_y],
-                [dialog_x + 2, dialog_y],
-                [dialog_x + 2, dialog_y + dialog_height],
-                [dialog_x + 2, dialog_y + dialog_height],
-                [dialog_x, dialog_y + dialog_height],
-                [dialog_x, dialog_y],
-            ], dtype=np.float32),
-            colors=np.array([
-                [c / 255.0 for c in WHITE[:3]] + [WHITE[3] / 255.0] for _ in range(6)
-            ], dtype=np.float32)
-        )
-
-        # Right Border
-        self.renderer.add_colored_vertices(
-            positions=np.array([
-                [dialog_x + dialog_width - 2, dialog_y],
-                [dialog_x + dialog_width, dialog_y],
-                [dialog_x + dialog_width, dialog_y + dialog_height],
-                [dialog_x + dialog_width, dialog_y + dialog_height],
-                [dialog_x + dialog_width - 2, dialog_y + dialog_height],
-                [dialog_x + dialog_width - 2, dialog_y],
-            ], dtype=np.float32),
-            colors=np.array([
-                [c / 255.0 for c in WHITE[:3]] + [WHITE[3] / 255.0] for _ in range(6)
-            ], dtype=np.float32)
-        )
-
-        # Draw input box background
-        input_box_x = dialog_x + 10
-        input_box_y = dialog_y + 50
-        input_box_width = 200
-        input_box_height = 30
-
-        self.renderer.add_colored_vertices(
-            positions=np.array([
-                [input_box_x, input_box_y],
-                [input_box_x + input_box_width, input_box_y],
-                [input_box_x + input_box_width, input_box_y + input_box_height],
-                [input_box_x + input_box_width, input_box_y + input_box_height],
-                [input_box_x, input_box_y + input_box_height],
-                [input_box_x, input_box_y],
-            ], dtype=np.float32),
-            colors=np.array([
-                [c / 255.0 for c in BLACK[:3]] + [BLACK[3] / 255.0] for _ in range(6)
-            ], dtype=np.float32)
-        )
-
-        # Draw input box border
-        self.renderer.add_colored_vertices(
-            positions=np.array([
-                [input_box_x, input_box_y],
-                [input_box_x + input_box_width, input_box_y],
-                [input_box_x + input_box_width, input_box_y + input_box_height],
-                [input_box_x + input_box_width, input_box_y + input_box_height],
-                [input_box_x, input_box_y + input_box_height],
-                [input_box_x, input_box_y],
-            ], dtype=np.float32),
-            colors=np.array([
-                [c / 255.0 for c in WHITE[:3]] + [WHITE[3] / 255.0] for _ in range(6)
-            ], dtype=np.float32)
-        )
-
-        # Draw "Save" button background
-        button_width = 70
-        button_height = 30
-        button_x = dialog_x + 220
-        button_y = dialog_y + 50
-
-        self.renderer.add_colored_vertices(
-            positions=np.array([
-                [button_x, button_y],
-                [button_x + button_width, button_y],
-                [button_x + button_width, button_y + button_height],
-                [button_x + button_width, button_y + button_height],
-                [button_x, button_y + button_height],
-                [button_x, button_y],
-            ], dtype=np.float32),
-            colors=np.array([
-                [c / 255.0 for c in GREY[:3]] + [GREY[3] / 255.0] for _ in range(6)
-            ], dtype=np.float32)
-        )
-
-        # Draw "Save" button border
-        self.renderer.add_colored_vertices(
-            positions=np.array([
-                [button_x, button_y],
-                [button_x + button_width, button_y],
-                [button_x + button_width, button_y + button_height],
-                [button_x + button_width, button_y + button_height],
-                [button_x, button_y + button_height],
-                [button_x, button_y],
-            ], dtype=np.float32),
-            colors=np.array([
-                [c / 255.0 for c in WHITE[:3]] + [WHITE[3] / 255.0] for _ in range(6)
-            ], dtype=np.float32)
-        )
-
-        # Draw texts using Renderer (textured quads)
-        # Label text
-        label_text = "Save Circuit"
-        texture_id, text_width, text_height = self.renderer.load_text_texture(label_text, self.big_font, WHITE)
-        self.renderer.add_textured_quad(dialog_x + 10, dialog_y + 10, text_width, text_height, texture_id)
-
-        # Input text
-        input_text = save_filename if save_filename else "Enter filename..."
-        texture_id, text_width, text_height = self.renderer.load_text_texture(input_text, self.font, WHITE)
-        self.renderer.add_textured_quad(input_box_x + 5, input_box_y + 5, text_width, text_height, texture_id)
-
-        # Button text
-        button_text = "Save"
-        texture_id, text_width, text_height = self.renderer.load_text_texture(button_text, self.font, BLACK)
-        text_x = button_x + (button_width - text_width) / 2
-        text_y = button_y + (button_height - text_height) / 2
-        self.renderer.add_textured_quad(text_x, text_y, text_width, text_height, texture_id)
-
-    def draw_load_dialog(self, grid, load_files, load_scroll_offset, load_selection_index):
-        """
-        Draws the Load Circuit dialog using the Renderer.
-
-        Parameters:
-        - grid (Grid): The Grid object for coordinate transformations.
-        - load_files (list): List of filenames available for loading.
-        - load_scroll_offset (int): Current scroll offset for the load file list.
-        - load_selection_index (int): Currently selected file index.
-
-        Returns:
-        - None
-        """
-        # Define dialog area
-        dialog_width = self.screen_width - 40
-        dialog_height = self.screen_height - 60
-        dialog_x = 20
-        dialog_y = 20
-
-        # Draw dialog background
-        self.renderer.add_colored_vertices(
-            positions=np.array([
-                [dialog_x, dialog_y],
-                [dialog_x + dialog_width, dialog_y],
-                [dialog_x + dialog_width, dialog_y + dialog_height],
-                [dialog_x + dialog_width, dialog_y + dialog_height],
-                [dialog_x, dialog_y + dialog_height],
-                [dialog_x, dialog_y],
-            ], dtype=np.float32),
-            colors=np.array([
-                [c / 255.0 for c in DARK_GREY[:3]] + [DARK_GREY[3] / 255.0] for _ in range(6)
-            ], dtype=np.float32)
-        )
-
-        # Draw borders
-        # Top Border
-        self.renderer.add_colored_vertices(
-            positions=np.array([
-                [dialog_x, dialog_y],
-                [dialog_x + dialog_width, dialog_y],
-                [dialog_x + dialog_width, dialog_y + 2],
-                [dialog_x + dialog_width, dialog_y + 2],
-                [dialog_x, dialog_y + 2],
-                [dialog_x, dialog_y],
-            ], dtype=np.float32),
-            colors=np.array([
-                [c / 255.0 for c in WHITE[:3]] + [WHITE[3] / 255.0] for _ in range(6)
-            ], dtype=np.float32)
-        )
-
-        # Bottom Border
-        self.renderer.add_colored_vertices(
-            positions=np.array([
-                [dialog_x, dialog_y + dialog_height - 2],
-                [dialog_x + dialog_width, dialog_y + dialog_height - 2],
-                [dialog_x + dialog_width, dialog_y + dialog_height],
-                [dialog_x + dialog_width, dialog_y + dialog_height],
-                [dialog_x, dialog_y + dialog_height],
-                [dialog_x, dialog_y + dialog_height - 2],
-            ], dtype=np.float32),
-            colors=np.array([
-                [c / 255.0 for c in WHITE[:3]] + [WHITE[3] / 255.0] for _ in range(6)
-            ], dtype=np.float32)
-        )
-
-        # Left Border
-        self.renderer.add_colored_vertices(
-            positions=np.array([
-                [dialog_x, dialog_y],
-                [dialog_x + 2, dialog_y],
-                [dialog_x + 2, dialog_y + dialog_height],
-                [dialog_x + 2, dialog_y + dialog_height],
-                [dialog_x, dialog_y + dialog_height],
-                [dialog_x, dialog_y],
-            ], dtype=np.float32),
-            colors=np.array([
-                [c / 255.0 for c in WHITE[:3]] + [WHITE[3] / 255.0] for _ in range(6)
-            ], dtype=np.float32)
-        )
-
-        # Right Border
-        self.renderer.add_colored_vertices(
-            positions=np.array([
-                [dialog_x + dialog_width - 2, dialog_y],
-                [dialog_x + dialog_width, dialog_y],
-                [dialog_x + dialog_width, dialog_y + dialog_height],
-                [dialog_x + dialog_width, dialog_y + dialog_height],
-                [dialog_x + dialog_width - 2, dialog_y + dialog_height],
-                [dialog_x + dialog_width - 2, dialog_y],
-            ], dtype=np.float32),
-            colors=np.array([
-                [c / 255.0 for c in WHITE[:3]] + [WHITE[3] / 255.0] for _ in range(6)
-            ], dtype=np.float32)
-        )
-
-        # Draw file list entries
-        list_x = dialog_x + 10
-        list_y = dialog_y + 50
-        item_height = 30
-        max_visible = int((dialog_height - 70) / item_height)
-        visible_files = load_files[load_scroll_offset:load_scroll_offset + max_visible]
-
-        for index, file in enumerate(visible_files):
-            actual_index = index + load_scroll_offset
-            file_rect_x = list_x
-            file_rect_y = list_y + index * item_height
-            file_rect_width = dialog_width - 20
-            file_rect_height = item_height
-
-            if actual_index == load_selection_index:
-                color = LIGHTER_GREY
-            else:
-                color = DARK_GREY
-
-            # Draw file entry background
-            self.renderer.add_colored_vertices(
-                positions=np.array([
-                    [file_rect_x, file_rect_y],
-                    [file_rect_x + file_rect_width, file_rect_y],
-                    [file_rect_x + file_rect_width, file_rect_y + file_rect_height],
-                    [file_rect_x + file_rect_width, file_rect_y + file_rect_height],
-                    [file_rect_x, file_rect_y + file_rect_height],
-                    [file_rect_x, file_rect_y],
-                ], dtype=np.float32),
-                colors=np.array([
-                    [c / 255.0 for c in color[:3]] + [color[3] / 255.0] for _ in range(6)
-                ], dtype=np.float32)
-            )
-
-            # Draw file entry border
-            self.renderer.add_colored_vertices(
-                positions=np.array([
-                    [file_rect_x, file_rect_y],
-                    [file_rect_x + file_rect_width, file_rect_y],
-                    [file_rect_x + file_rect_width, file_rect_y + file_rect_height],
-                    [file_rect_x + file_rect_width, file_rect_y + file_rect_height],
-                    [file_rect_x, file_rect_y + file_rect_height],
-                    [file_rect_x, file_rect_y],
-                ], dtype=np.float32),
-                colors=np.array([
-                    [c / 255.0 for c in WHITE[:3]] + [WHITE[3] / 255.0] for _ in range(6)
-                ], dtype=np.float32)
-            )
-
-            # Draw file name text
-            file_text = file
-            texture_id, text_width, text_height = self.renderer.load_text_texture(file_text, self.font, WHITE)
-            self.renderer.add_textured_quad(file_rect_x + 5, file_rect_y + 5, text_width, text_height, texture_id)
-
-        # Draw "Load" button background
-        button_width = 100
-        button_height = 40
-        button_x = dialog_x + dialog_width - button_width - 20
-        button_y = dialog_y + dialog_height - button_height - 20
-
-        self.renderer.add_colored_vertices(
-            positions=np.array([
-                [button_x, button_y],
-                [button_x + button_width, button_y],
-                [button_x + button_width, button_y + button_height],
-                [button_x + button_width, button_y + button_height],
-                [button_x, button_y + button_height],
-                [button_x, button_y],
-            ], dtype=np.float32),
-            colors=np.array([
-                [c / 255.0 for c in GREY[:3]] + [GREY[3] / 255.0] for _ in range(6)
-            ], dtype=np.float32)
-        )
-
-        # Draw "Load" button border
-        self.renderer.add_colored_vertices(
-            positions=np.array([
-                [button_x, button_y],
-                [button_x + button_width, button_y],
-                [button_x + button_width, button_y + button_height],
-                [button_x + button_width, button_y + button_height],
-                [button_x, button_y + button_height],
-                [button_x, button_y],
-            ], dtype=np.float32),
-            colors=np.array([
-                [c / 255.0 for c in WHITE[:3]] + [WHITE[3] / 255.0] for _ in range(6)
-            ], dtype=np.float32)
-        )
-
-        # Draw label text
-        label_text = "Load Circuit"
-        texture_id, text_width, text_height = self.renderer.load_text_texture(label_text, self.big_font, WHITE)
-        self.renderer.add_textured_quad(dialog_x + 10, dialog_y + 10, text_width, text_height, texture_id)
-
-        # Draw "Load" button text
-        button_text = "Load"
-        texture_id, text_width, text_height = self.renderer.load_text_texture(button_text, self.font, BLACK)
-        text_x = button_x + (button_width - text_width) / 2
-        text_y = button_y + (button_height - text_height) / 2
-        self.renderer.add_textured_quad(text_x, text_y, text_width, text_height, texture_id)
-
-    def draw_dialogs(self, grid, save_dialog_active, load_dialog_active,
-                     save_filename="", load_files=[], load_scroll_offset=0, load_selection_index=-1):
-        """
-        Draws active dialogs based on the current state.
-
-        Parameters:
-        - grid (Grid): The Grid object for coordinate transformations.
-        - save_dialog_active (bool): Whether the save dialog is active.
-        - load_dialog_active (bool): Whether the load dialog is active.
-        - save_filename (str): Current filename in the save input box.
-        - load_files (list): List of filenames available for loading.
-        - load_scroll_offset (int): Current scroll offset for the load file list.
-        - load_selection_index (int): Currently selected file index.
-
-        Returns:
-        - None
-        """
-        if save_dialog_active:
-            self.draw_save_dialog(grid, save_filename)
-        if load_dialog_active:
-            self.draw_load_dialog(grid, load_files, load_scroll_offset, load_selection_index)
-
-# ------------------------------------------
-# Utility Functions (if any)
-# ------------------------------------------
-
-def draw_textured_quad(renderer, x, y, width, height, texture_id):
-    """
-    Draws a textured quad at the specified position using the Renderer.
-
-    Parameters:
-    - renderer (Renderer): The renderer instance.
-    - x (float): Top-left X coordinate.
-    - y (float): Top-left Y coordinate.
-    - width (float): Width of the quad.
-    - height (float): Height of the quad.
-    - texture_id (int): OpenGL texture ID.
-
-    Returns:
-    - None
-    """
-    renderer.add_textured_quad(x, y, width, height, texture_id)
-
-def draw_outlined_rect(renderer, x, y, width, height, color, line_width=2):
-    """
-    Draws an outlined rectangle using the Renderer.
-
-    Parameters:
-    - renderer (Renderer): The renderer instance.
-    - x (float): Top-left X coordinate.
-    - y (float): Top-left Y coordinate.
-    - width (float): Width of the rectangle.
-    - height (float): Height of the rectangle.
-    - color (tuple): RGB or RGBA color tuple.
-    - line_width (float): Width of the outline.
-
-    Returns:
-    - None
-    """
-    # Define the rectangle as two triangles
-    vertices = [
-        [x, y],
-        [x + width, y],
-        [x + width, y + height],
-
-        [x + width, y + height],
-        [x, y + height],
-        [x, y],
-    ]
-    positions = np.array(vertices, dtype=np.float32)
-
-    # Normalize color
-    color_rgba = [c / 255.0 for c in color[:3]] + ([color[3] / 255.0] if len(color) > 3 else [1.0])
-    colors_array = np.array([color_rgba] * 6, dtype=np.float32)
-
-    # Add to renderer as colored vertices
-    renderer.add_colored_vertices(positions, colors_array)

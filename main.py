@@ -1,3 +1,4 @@
+
 import pygame
 import sys
 import math
@@ -11,7 +12,6 @@ from OpenGL.GL import *
 from OpenGL.GLU import *
 import graphics
 import numpy as np
-
 
 pygame.init()
 
@@ -207,39 +207,39 @@ class Simulation:
         iteration = 0
         max_iterations = 100
 
-        while True:
-            if iteration > max_iterations:
-                print("SOLVING CIRCUIT TOOK TOO LONG")
-                break
-            iteration += 1
+        #while True:
+        if iteration > max_iterations:
+            print("SOLVING CIRCUIT TOOK TOO LONG")
+            #break
+        iteration += 1
 
-            graph = self.build_connectivity_graph()
-            input_nodes = [node.position for node in self.circuit.nodes if node.node_type == 'input' and node.state]
-            # Include Clock states as input nodes
-            clock_on_points = [clock.position for clock in self.circuit.clocks if clock.state]
-            all_input_points = input_nodes + clock_on_points
-            self.on_points = self.propagate_signals(graph, all_input_points)
+        graph = self.build_connectivity_graph()
+        input_nodes = [node.position for node in self.circuit.nodes if node.node_type == 'input' and node.state]
+        # Include Clock states as input nodes
+        clock_on_points = [clock.position for clock in self.circuit.clocks if clock.state]
+        all_input_points = input_nodes + clock_on_points
+        self.on_points = self.propagate_signals(graph, all_input_points)
 
-            current_states = (frozenset(self.on_points), tuple(transistor.state for transistor in self.circuit.transistors))
-            if current_states == previous_states or current_states == previous_previous_states:
-                if current_states == previous_previous_states:
-                    print("CIRCUIT OSCILLATION DETECTED!")
-                break
-            previous_previous_states = previous_states
-            previous_states = current_states
+        current_states = (frozenset(self.on_points), tuple(transistor.state for transistor in self.circuit.transistors))
+        if current_states == previous_states or current_states == previous_previous_states:
+            if current_states == previous_previous_states:
+                print("CIRCUIT OSCILLATION DETECTED!")
+            #break
+        previous_previous_states = previous_states
+        previous_states = current_states
 
-            # Update states
-            for wire in self.circuit.wires:
-                wire.state = wire.start_point in self.on_points or wire.end_point in self.on_points
+        # Update states
+        for wire in self.circuit.wires:
+            wire.state = wire.start_point in self.on_points or wire.end_point in self.on_points
 
-            for node in self.circuit.nodes:
-                if node.node_type == 'output':
-                    node.state = node.position in self.on_points
+        for node in self.circuit.nodes:
+            if node.node_type == 'output':
+                node.state = node.position in self.on_points
 
-            for transistor in self.circuit.transistors:
-                gate_state = self.get_state_at_point(transistor.position)
-                transistor.state = (transistor.transistor_type == "n-type" and gate_state) or \
-                                    (transistor.transistor_type == "p-type" and not gate_state)
+        for transistor in self.circuit.transistors:
+            gate_state = self.get_state_at_point(transistor.position)
+            transistor.state = (transistor.transistor_type == "n-type" and gate_state) or \
+                                (transistor.transistor_type == "p-type" and not gate_state)
 
         # Update colors based on state
         for wire in self.circuit.wires:
@@ -814,30 +814,6 @@ class Game:
             new_clock.position = (clock.position[0] + dx, clock.position[1] + dy)
             self.circuit.add_clock(new_clock)
 
-    def get_selection_center(self):
-        # Calculate the center of the selection
-        x_values = []
-        y_values = []
-        for node in self.selected_nodes:
-            x_values.append(node.position[0])
-            y_values.append(node.position[1])
-        for transistor in self.selected_transistors:
-            x_values.append(transistor.position[0])
-            y_values.append(transistor.position[1])
-        for wire in self.selected_wires:
-            x_values.extend([wire.start_point[0], wire.end_point[0]])
-            y_values.extend([wire.start_point[1], wire.end_point[1]])
-        for clock in self.selected_clocks:
-            x_values.append(clock.position[0])
-            y_values.append(clock.position[1])
-
-        if not x_values or not y_values:
-            return (0, 0)
-
-        center_x = sum(x_values) / len(x_values)
-        center_y = sum(y_values) / len(y_values)
-        return (center_x, center_y)
-
     def save_circuit(self, filename):
         data = {
             "nodes": [],
@@ -926,13 +902,10 @@ class Game:
             self.grid,
             self.circuit,
             mouse_pos,
-            dragging_wire_endpoint=None,  # Replace with actual dragging logic
-            is_drawing_wire=False,        # Replace with actual wire drawing logic
-            wire_start_point=None,        # Replace with actual wire start point
-            is_selecting=False,           # Replace with actual selection logic
-            selection_start=None,         # Replace with actual selection start
-            selection_end=None,           # Replace with actual selection end
-            selection_rect_world=None,    # Replace with actual selection rectangle
+            is_selecting=self.is_selecting,
+            selection_start=self.selection_start,
+            selection_end=self.selection_end,
+            selection_rect_world=self.selection_rect_world,
             save_dialog_active=self.save_dialog_active,
             load_dialog_active=self.load_dialog_active,
             save_filename=self.save_filename,
@@ -955,53 +928,7 @@ class Game:
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
             glLoadIdentity()
 
-            # main.py or your main application file
-
-            # After initializing the renderer
-            self.renderer.begin_colored_batch()
-
-            # Draw a red rectangle
-            red_color = [1.0, 1.0, 1.0, 1.0]  # Pure Red
-            red_vertices = np.array([
-                [100, 100],
-                [200, 100],
-                [200, 200],
-                [200, 200],
-                [100, 200],
-                [100, 100],
-            ], dtype=np.float32)
-            red_colors = np.array([red_color] * 6, dtype=np.float32)
-            self.renderer.add_colored_vertices(red_vertices, red_colors)
-
-            # Draw a green rectangle
-            green_color = [0.0, 1.0, 0.0, 1.0]  # Pure Green
-            green_vertices = np.array([
-                [250, 100],
-                [350, 100],
-                [350, 200],
-                [350, 200],
-                [250, 200],
-                [250, 100],
-            ], dtype=np.float32)
-            green_colors = np.array([green_color] * 6, dtype=np.float32)
-            self.renderer.add_colored_vertices(green_vertices, green_colors)
-
-            # Draw a blue rectangle
-            blue_color = [0.0, 0.0, 1.0, 1.0]  # Pure Blue
-            blue_vertices = np.array([
-                [400, 100],
-                [500, 100],
-                [500, 200],
-                [500, 200],
-                [400, 200],
-                [400, 100],
-            ], dtype=np.float32)
-            blue_colors = np.array([blue_color] * 6, dtype=np.float32)
-            self.renderer.add_colored_vertices(blue_vertices, blue_colors)
-
-            # Finalize and draw the batch
-            self.renderer.end_colored_batch()
-
+            graphics.check_gl_errors()
 
             # Update simulation
             if self.simulation_running:
