@@ -75,13 +75,13 @@ class Grid:
 
         # Background
         positions = np.array([[0.0, 0.0], [0.0, self.height], [self.width, self.height]])
-        bg = [c / 255.0 for c in BLACK[:3]] + [1.0]
+        bg = [c / 255.0 for c in BACKGROUND_COLOR[:3]] + [1.0]
         bg = [bg for _ in range(len(positions))]
         bg = np.array(bg).astype(np.float32)
         renderer.add_vertices(positions, bg)
         
         positions = np.array([[0.0, 0.0], [self.width, 0.0], [self.width, self.height]])
-        bg = [c / 255.0 for c in BLACK[:3]] + [1.0]
+        bg = [c / 255.0 for c in BACKGROUND_COLOR[:3]] + [1.0]
         bg = [bg for _ in range(len(positions))]
         bg = np.array(bg).astype(np.float32)
         renderer.add_vertices(positions, bg)
@@ -90,7 +90,7 @@ class Grid:
         if num_grid_x * num_grid_y < MAX_GRID_POINTS:
             positions = []
             colors = []
-            color = [c / 255.0 for c in GREY][:3] + [1.0]
+            color = [c / 255.0 for c in GRID_POINT_COLOR][:3] + [1.0]
             for x in range(grid_x_start, grid_x_end + GRID_SPACING, GRID_SPACING):
                 for y in range(grid_y_start, grid_y_end + GRID_SPACING, GRID_SPACING):
                     screen_x, screen_y = self.world_to_screen(x, y)
@@ -114,42 +114,13 @@ class Wire:
         color = W_ON if self.state else W_OFF
 
         if is_hovered or self.is_selected:
-            color = tuple(min(255, c + 50) for c in color)
+            color = tuple(min(255, c + 5) for c in color)
 
         start_x, start_y = grid.world_to_screen(*self.start_point)
         end_x, end_y = grid.world_to_screen(*self.end_point)
         wire_width = max(1, int(WIRE_SIZE * grid.scale))
 
-        # Calculate the direction and perpendicular vectors
-        dx = end_x - start_x
-        dy = end_y - start_y
-        length = math.hypot(dx, dy)
-        if length == 0:
-            return  # Avoid division by zero
-
-        px = -dy / length
-        py = dx / length
-
-        half_width = wire_width / 2
-        # Define the four corners of the thick line as two triangles
-        vertices = [
-            [start_x + px * half_width, start_y + py * half_width],
-            [end_x + px * half_width, end_y + py * half_width],
-            [end_x - px * half_width, end_y - py * half_width],
-
-            [end_x - px * half_width, end_y - py * half_width],
-            [start_x - px * half_width, start_y - py * half_width],
-            [start_x + px * half_width, start_y + py * half_width],
-        ]
-
-        # Define colors for each vertex
-        color_rgba = [c / 255.0 for c in color[:3]] + [1.0]
-        colors_rgba = [color_rgba] * 6
-        colors_array = np.array(colors_rgba, dtype=np.float32)
-
-        positions = np.array(vertices, dtype=np.float32)
-
-        renderer.add_vertices(positions, colors_array)
+        draw_rounded_line(renderer, (start_x, start_y), (end_x, end_y), color, wire_width)
 
     def is_hovered(self, grid, mouse_pos):
         # Check if mouse is close to the wire
@@ -193,7 +164,7 @@ class Node:
     def add_vertices_to_batch(self, renderer, grid, is_hovered=False):
         screen_x, screen_y = grid.world_to_screen(*self.position)
         radius = max(1, int(IO_POINT_SIZE * grid.scale))
-
+        #radius = grid.scale * IO_POINT_SIZE
         color = YELLOW if self.state else WHITE
         if is_hovered or self.is_selected:
             color = tuple(min(255, c + 50) for c in color)
@@ -246,7 +217,7 @@ class Transistor:
 
         middle_x, middle_y = self.position
         grid_spacing_scaled = GRID_SPACING * grid.scale
-        leg_length = GRID_SPACING * 0.51 * grid.scale
+        leg_length = GRID_SPACING * 0.51
 
         if self.orientation == 'horizontal':
             left_x = middle_x - GRID_SPACING
@@ -298,43 +269,11 @@ class Transistor:
             self.add_rectangle(renderer, bridge_left_screen, bridge_right_screen, color_b, grid, wide=True)
 
     def add_rectangle(self, renderer, point1, point2, color, grid, wide=False):
-        x1, y1 = point1
-        x2, y2 = point2
-
         if wide:
             width = GRID_SPACING * 0.8 * grid.scale
         else:
             width = GRID_SPACING * 0.4 * grid.scale
-
-        dx = x2 - x1
-        dy = y2 - y1
-        length = math.hypot(dx, dy)
-        if length == 0:
-            return  # Avoid division by zero
-
-        px = -dy / length
-        py = dx / length
-
-        half_width = width / 2
-        # Define the four corners of the thick line as two triangles
-        vertices = [
-            [x1 + px * half_width, y1 + py * half_width],
-            [x2 + px * half_width, y2 + py * half_width],
-            [x2 - px * half_width, y2 - py * half_width],
-
-            [x2 - px * half_width, y2 - py * half_width],
-            [x1 - px * half_width, y1 - py * half_width],
-            [x1 + px * half_width, y1 + py * half_width],
-        ]
-
-        # Define colors for each vertex
-        color_rgba = [c / 255.0 for c in color[:3]] + [1.0]
-        colors_rgba = [color_rgba] * 6
-        colors_array = np.array(colors_rgba, dtype=np.float32)
-
-        positions = np.array(vertices, dtype=np.float32)
-
-        renderer.add_vertices(positions, colors_array)
+        draw_rounded_rect(renderer, point1, point2, color, width, 10*grid.scale)
 
     def is_hovered(self, grid, mouse_pos):
         screen_x, screen_y = grid.world_to_screen(*self.position)
@@ -352,16 +291,16 @@ class Clock:
 
     def add_vertices_to_batch(self, renderer, grid, is_hovered=False):
         screen_x, screen_y = grid.world_to_screen(*self.position)
-        size = max(1, int(GRID_SPACING * 0.6 * grid.scale))
+        size = max(1, int(GRID_SPACING * 0.5 * grid.scale))
         side_distance = max(1, int(GRID_SPACING * 0.45 * grid.scale))
         length = max(1, int(GRID_SPACING * 0.4 * grid.scale))
         side_length = max(1, int(GRID_SPACING * 0.35 * grid.scale))
 
-        color = list(CLOCK_COLOR[:3]) + ([CLOCK_COLOR[3] / 255.0] if len(CLOCK_COLOR) > 3 else [1.0])
-        color2 = list(DARK_GREY[:3]) + ([DARK_GREY[3] / 255.0] if len(DARK_GREY) > 3 else [1.0])
+        color = CLOCK_COLOR
+        color2 = DARK_GREY
         if is_hovered or self.is_selected:
-            color = tuple(min(1.0, c + 0.2) for c in color)  # Lighten color
-            color2 = tuple(min(1.0, c + 0.2) for c in color2)
+            color = tuple(min(255, c + 20) for c in color)
+            color2 = tuple(min(255, c + 20) for c in color2)
 
         # Main vertical line
         self.add_rectangle(renderer, (screen_x, screen_y - length), (screen_x, screen_y + length), color, grid, width=size)
@@ -375,40 +314,7 @@ class Clock:
                            (screen_x + side_distance, screen_y + side_length), color2, grid, width=size / 4)
 
     def add_rectangle(self, renderer, point1, point2, color, grid, width):
-        x1, y1 = point1
-        x2, y2 = point2
-
-        dx = x2 - x1
-        dy = y2 - y1
-        length = math.hypot(dx, dy)
-        if length == 0:
-            return  # Avoid division by zero
-
-        px = -dy / length
-        py = dx / length
-
-        half_width = width / 2
-        # Define the four corners of the thick line as two triangles
-        vertices = [
-            [x1 + px * half_width, y1 + py * half_width],
-            [x2 + px * half_width, y2 + py * half_width],
-            [x2 - px * half_width, y2 - py * half_width],
-
-            [x2 - px * half_width, y2 - py * half_width],
-            [x1 - px * half_width, y1 - py * half_width],
-            [x1 + px * half_width, y1 + py * half_width],
-        ]
-
-        # Define colors for each vertex
-        color_rgba = list(color)
-        if len(color_rgba) < 4:
-            color_rgba.append(1.0)
-        colors_rgba = [color_rgba] * 6
-        colors_array = np.array(colors_rgba, dtype=np.float32)
-
-        positions = np.array(vertices, dtype=np.float32)
-
-        renderer.add_vertices(positions, colors_array)
+        draw_rounded_rect(renderer, point1, point2, color, width, 10*grid.scale)
 
     def update(self):
         self.frame_counter += 1

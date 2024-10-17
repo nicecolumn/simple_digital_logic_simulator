@@ -369,7 +369,7 @@ class Renderer:
         self.projection_matrix = self.create_orthographic_matrix(0, screen_width, screen_height, 0, -1, 1)
 
         # Prepare buffers for triangles
-        self.max_vertices = 1000000  # Adjust as needed
+        self.max_vertices = 10000  # Adjust as needed
         self.triangle_vertex_data = np.zeros(self.max_vertices, dtype=[('position', np.float32, 2), ('color', np.float32, 4)])
         self.triangle_vertex_count = 0
 
@@ -398,7 +398,7 @@ class Renderer:
         glBindVertexArray(0)
 
         # Prepare buffers for points
-        self.max_points = 1000000
+        self.max_points = 10000
         self.point_vertex_data = np.zeros(self.max_points, dtype=[('position', np.float32, 2), ('color', np.float32, 4)])
         self.point_vertex_count = 0
 
@@ -834,6 +834,19 @@ class Renderer:
 
         # Draw grid
         grid.draw(self)
+        #self.end()
+
+        #self.begin()
+
+        # Draw Transistors
+        for transistor in circuit.transistors:
+            is_hovered = transistor.is_hovered(grid, mouse_pos)
+            transistor.add_vertices_to_batch(self, grid, is_hovered)
+
+        # Draw Clocks
+        for clock in circuit.clocks:
+            is_hovered = clock.is_hovered(grid, mouse_pos)
+            clock.add_vertices_to_batch(self, grid, is_hovered)
 
         # Draw Wires
         for wire in circuit.wires:
@@ -846,16 +859,6 @@ class Renderer:
         for node in circuit.nodes:
             is_hovered = node.is_hovered(grid, mouse_pos)
             node.add_vertices_to_batch(self, grid, is_hovered)
-
-        # Draw Transistors
-        for transistor in circuit.transistors:
-            is_hovered = transistor.is_hovered(grid, mouse_pos)
-            transistor.add_vertices_to_batch(self, grid, is_hovered)
-
-        # Draw Clocks
-        for clock in circuit.clocks:
-            is_hovered = clock.is_hovered(grid, mouse_pos)
-            clock.add_vertices_to_batch(self, grid, is_hovered)
 
         # Draw selection box if selecting
         if is_selecting and selection_start and selection_end:
