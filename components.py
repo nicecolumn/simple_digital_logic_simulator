@@ -120,7 +120,8 @@ class Wire:
         end_x, end_y = grid.world_to_screen(*self.end_point)
         wire_width = max(1, int(WIRE_SIZE * grid.scale))
 
-        draw_rounded_line(renderer, (start_x, start_y), (end_x, end_y), color, wire_width)
+        #draw_rounded_line(renderer, (start_x, start_y), (end_x, end_y), color, wire_width)
+        draw_line(renderer, (start_x, start_y), (end_x, end_y), color, wire_width)
 
     def is_hovered(self, grid, mouse_pos):
         # Check if mouse is close to the wire
@@ -273,7 +274,8 @@ class Transistor:
             width = GRID_SPACING * 0.8 * grid.scale
         else:
             width = GRID_SPACING * 0.4 * grid.scale
-        draw_rounded_rect(renderer, point1, point2, color, width, 10*grid.scale)
+        #draw_rounded_rect(renderer, point1, point2, color, width, 10*grid.scale)
+        draw_line(renderer, point1, point2, color, width)
 
     def is_hovered(self, grid, mouse_pos):
         screen_x, screen_y = grid.world_to_screen(*self.position)

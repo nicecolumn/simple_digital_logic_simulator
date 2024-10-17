@@ -204,41 +204,41 @@ class Simulation:
         previous_states = None
         previous_previous_states = None
         iteration = 0
-        max_iterations = 100
+        max_iterations = 4
 
-        #while True:
-        if iteration > max_iterations:
-            print("SOLVING CIRCUIT TOOK TOO LONG")
-            #break
-        iteration += 1
+        while True:
+            if iteration > max_iterations:
+                #print("SOLVING CIRCUIT TOOK TOO LONG")
+                break
+            iteration += 1
 
-        graph = self.build_connectivity_graph()
-        input_nodes = [node.position for node in self.circuit.nodes if node.node_type == 'input' and node.state]
-        # Include Clock states as input nodes
-        clock_on_points = [clock.position for clock in self.circuit.clocks if clock.state]
-        all_input_points = input_nodes + clock_on_points
-        self.on_points = self.propagate_signals(graph, all_input_points)
+            graph = self.build_connectivity_graph()
+            input_nodes = [node.position for node in self.circuit.nodes if node.node_type == 'input' and node.state]
+            # Include Clock states as input nodes
+            clock_on_points = [clock.position for clock in self.circuit.clocks if clock.state]
+            all_input_points = input_nodes + clock_on_points
+            self.on_points = self.propagate_signals(graph, all_input_points)
 
-        current_states = (frozenset(self.on_points), tuple(transistor.state for transistor in self.circuit.transistors))
-        if current_states == previous_states or current_states == previous_previous_states:
-            if current_states == previous_previous_states:
-                print("CIRCUIT OSCILLATION DETECTED!")
-            #break
-        previous_previous_states = previous_states
-        previous_states = current_states
+            current_states = (frozenset(self.on_points), tuple(transistor.state for transistor in self.circuit.transistors))
+            if current_states == previous_states or current_states == previous_previous_states:
+                if current_states == previous_previous_states:
+                    print("CIRCUIT OSCILLATION DETECTED!")
+                break
+            previous_previous_states = previous_states
+            previous_states = current_states
 
-        # Update states
-        for wire in self.circuit.wires:
-            wire.state = wire.start_point in self.on_points or wire.end_point in self.on_points
+            # Update states
+            for wire in self.circuit.wires:
+                wire.state = wire.start_point in self.on_points or wire.end_point in self.on_points
 
-        for node in self.circuit.nodes:
-            if node.node_type == 'output':
-                node.state = node.position in self.on_points
+            for node in self.circuit.nodes:
+                if node.node_type == 'output':
+                    node.state = node.position in self.on_points
 
-        for transistor in self.circuit.transistors:
-            gate_state = self.get_state_at_point(transistor.position)
-            transistor.state = (transistor.transistor_type == "n-type" and gate_state) or \
-                                (transistor.transistor_type == "p-type" and not gate_state)
+            for transistor in self.circuit.transistors:
+                gate_state = self.get_state_at_point(transistor.position)
+                transistor.state = (transistor.transistor_type == "n-type" and gate_state) or \
+                                    (transistor.transistor_type == "p-type" and not gate_state)
 
         # Update colors based on state
         for wire in self.circuit.wires:
