@@ -1,7 +1,11 @@
-w - draw wire
-i - draw input node
-o - draw output node
-t - draw npn transistor
-p - draw pnp transistor
-ctrl+l - open load dialogue
-ctrl+s - open save dialogue
+## Keymap
+
+| Key         | Action                 |
+|-------------|------------------------|
+| **w**       | Draw wire              |
+| **i**       | Draw input node        |
+| **o**       | Draw output node       |
+| **t**       | Draw NPN transistor    |
+| **p**       | Draw PNP transistor    |
+| **Ctrl + L**| Open load dialogue     |
+| **Ctrl + S**| Open save dialogue     |
